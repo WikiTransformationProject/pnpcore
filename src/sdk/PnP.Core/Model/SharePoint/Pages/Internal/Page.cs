@@ -1515,6 +1515,11 @@ namespace PnP.Core.Model.SharePoint
             return SaveAsync(pageName).GetAwaiter().GetResult();
         }
 
+        private bool IsPageListItemValueMissingOrEmpty(string fieldName)
+        {
+            return !PageListItem.Values.ContainsKey(fieldName) || string.IsNullOrEmpty(PageListItem[fieldName]?.ToString());
+        }
+
         public async Task<string> SaveAsync(string pageName = null)
         {
             if (string.IsNullOrEmpty(pageName))
@@ -1579,6 +1584,7 @@ namespace PnP.Core.Model.SharePoint
 
             string serverRelativePageName;
             bool updatingExistingPage = false;
+            IFile addedOrExistingPageFile;
             if (PageListItem == null)
             {
                 // Page does not exist and need to be created
@@ -1596,7 +1602,7 @@ namespace PnP.Core.Model.SharePoint
                     folderHostingThePage = PagesLibrary.RootFolder;
                 }
 
-                var addedFile = await folderHostingThePage.Files.AddTemplateFileAsync(serverRelativePageName, TemplateFileType.ClientSidePage).ConfigureAwait(false);
+                var addedFile = addedOrExistingPageFile = await folderHostingThePage.Files.AddTemplateFileAsync(serverRelativePageName, TemplateFileType.ClientSidePage).ConfigureAwait(false);
 
                 // Since the AddTemplateFile method can alter the page name (# is replaced by -) we need to take that in account
                 pageName = addedFile.ServerRelativeUrl.Replace($"{PagesLibrary.RootFolder.ServerRelativeUrl}/", "");
@@ -1604,51 +1610,7 @@ namespace PnP.Core.Model.SharePoint
 
                 // Get the list item data for the added page
                 await EnsurePageListItemAsync(pageName).ConfigureAwait(false);
-
-                // Hanlde the basic page configuration for a new modern page
-                if (LayoutType == PageLayoutType.Spaces)
-                {
-                    PageListItem[PageConstants.ContentTypeId] = PageConstants.SpacesPage;
-                }
-                else
-                {
-                    PageListItem[PageConstants.ContentTypeId] = PageConstants.ModernArticlePage;
-                }
-
                 PageListItem[PageConstants.Title] = string.IsNullOrWhiteSpace(pageTitle) ? Path.GetFileNameWithoutExtension(pageName) : pageTitle;
-                PageListItem[PageConstants.ClientSideApplicationId] = PageConstants.SitePagesFeatureId;
-
-                if (LayoutType == PageLayoutType.Spaces)
-                {
-                    PageListItem[PageConstants.PageLayoutType] = PageConstants.SpacesLayoutType;
-                    if (!string.IsNullOrEmpty(SpaceContent))
-                    {
-                        PageListItem[PageConstants.SpaceContentField] = SpaceContent;
-                    }
-                }
-                else if (LayoutType == PageLayoutType.Topic)
-                {
-                    PageListItem[PageConstants.PageLayoutType] = PageConstants.TopicLayoutType;
-                    // Each page needs to have a unique topic Entity ID, so generate a new one
-                    PageListItem[PageConstants.TopicEntityId] = GenerateTopicPageEntityId(PnPContext.Site.Id, PnPContext.Web.Id, addedFile.UniqueId);
-                    PageListItem[PageConstants.TopicEntityRelations] = EntityRelations;
-                    PageListItem[PageConstants.TopicEntityType] = EntityType;
-
-                    // Set the _SPSitePageFlags field
-                    PageListItem[PageConstants._SPSitePageFlags] = ";#TopicPage;#";
-
-                }
-                else
-                {
-                    PageListItem[PageConstants.PageLayoutType] = layoutType.ToString();
-                }
-
-                if (layoutType == PageLayoutType.Article || LayoutType == PageLayoutType.Spaces)
-                {
-                    SetBannerImageUrlField("/_layouts/15/images/sitepagethumbnail.png");
-                }
-
-                PageListItem[PageConstants.PromotedStateField] = (int)PromotedState.NotPromoted;
             }
             else
             {
@@ -1658,6 +1620,67 @@ namespace PnP.Core.Model.SharePoint
                 {
                     PageListItem[PageConstants.Title] = pageTitle;
                 }
+                addedOrExistingPageFile = PageListItem.File;
+            }
+
+            // Hanlde the basic page configuration for a new modern page, or a broken modern page that is missing the basic configuration (see https://github.com/pnp/pnpframework/issues/724)
+            if (LayoutType == PageLayoutType.Spaces && IsPageListItemValueMissingOrEmpty(PageConstants.ContentTypeId))
+            {
+                PageListItem[PageConstants.ContentTypeId] = PageConstants.SpacesPage;
+            }
+            else
+            {
+                PageListItem[PageConstants.ContentTypeId] = PageConstants.ModernArticlePage;
+            }
+
+            if (IsPageListItemValueMissingOrEmpty(PageConstants.ClientSideApplicationId))
+            {
+                PageListItem[PageConstants.ClientSideApplicationId] = PageConstants.SitePagesFeatureId;
+            }
+
+            if (LayoutType == PageLayoutType.Spaces && IsPageListItemValueMissingOrEmpty(PageConstants.PageLayoutType))
+            {
+                PageListItem[PageConstants.PageLayoutType] = PageConstants.SpacesLayoutType;
+                if (!string.IsNullOrEmpty(SpaceContent))
+                {
+                    PageListItem[PageConstants.SpaceContentField] = SpaceContent;
+                }
+            }
+            else if (LayoutType == PageLayoutType.Topic && (
+                IsPageListItemValueMissingOrEmpty(PageConstants.PageLayoutType)
+                || IsPageListItemValueMissingOrEmpty(PageConstants.TopicEntityId)
+                || IsPageListItemValueMissingOrEmpty(PageConstants.TopicEntityRelations)
+                || IsPageListItemValueMissingOrEmpty(PageConstants.TopicEntityType)
+                || IsPageListItemValueMissingOrEmpty(PageConstants._SPSitePageFlags)
+            ))
+            {
+                PageListItem[PageConstants.PageLayoutType] = PageConstants.TopicLayoutType;
+                if (!addedOrExistingPageFile.IsPropertyAvailable(f => f.UniqueId))
+                {
+                    addedOrExistingPageFile.EnsureProperties(f => f.UniqueId);
+                }
+                // Each page needs to have a unique topic Entity ID, so generate a new one
+                PageListItem[PageConstants.TopicEntityId] = GenerateTopicPageEntityId(PnPContext.Site.Id, PnPContext.Web.Id, addedOrExistingPageFile.UniqueId);
+                PageListItem[PageConstants.TopicEntityRelations] = EntityRelations;
+                PageListItem[PageConstants.TopicEntityType] = EntityType;
+
+                // Set the _SPSitePageFlags field
+                PageListItem[PageConstants._SPSitePageFlags] = ";#TopicPage;#";
+
+            }
+            else if (IsPageListItemValueMissingOrEmpty(PageConstants.PageLayoutType))
+            {
+                PageListItem[PageConstants.PageLayoutType] = layoutType.ToString();
+            }
+
+            if (layoutType == PageLayoutType.Article || LayoutType == PageLayoutType.Spaces)
+            {
+                SetBannerImageUrlField("/_layouts/15/images/sitepagethumbnail.png");
+            }
+
+            if (IsPageListItemValueMissingOrEmpty(PageConstants.PromotedStateField))
+            {
+                PageListItem[PageConstants.PromotedStateField] = (int)PromotedState.NotPromoted;
             }
 
             // Persist to page field
