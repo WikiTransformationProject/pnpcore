@@ -18,6 +18,16 @@
         /// <summary>
         /// Tiles Mode
         /// </summary>
-        TILES
+        TILES,
+
+        /// <summary>
+        /// Kanban Mode
+        /// </summary>
+        KANBAN,
+
+        /// <summary>
+        /// Modern Calendar Mode
+        /// </summary>
+        MODERNCALENDAR
     }
 }

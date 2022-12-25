@@ -1,4 +1,5 @@
-﻿using PnP.Core.Model.Security;
+﻿using Microsoft.Extensions.Logging;
+using PnP.Core.Model.Security;
 using PnP.Core.QueryModel;
 using PnP.Core.Services;
 using PnP.Core.Services.Core.CSOM.Requests;
@@ -29,6 +30,7 @@ namespace PnP.Core.Model.SharePoint
         private static readonly Guid MultilingualPagesFeature = new Guid("24611c05-ee19-45da-955f-6602264abaf8");
         private static readonly Guid PageSchedulingFeature = new Guid("e87ca965-5e07-4a23-b007-ddd4b5afb9c7");
         internal const string WebOptionsAdditionalInformationKey = "WebOptions";
+        internal const string IndexedPropertyKeysName = "vti_indexedpropertykeys";
 
         #region Construction
         public Web()
@@ -297,6 +299,8 @@ namespace PnP.Core.Model.SharePoint
         public IPropertyValues AllProperties { get => GetModelValue<IPropertyValues>(); }
 
         public ISharePointUser CurrentUser { get => GetModelValue<ISharePointUser>(); }
+
+        public ISharePointUser Author { get => GetModelValue<ISharePointUser>(); }
 
         public ISharePointUserCollection SiteUsers { get => GetModelCollectionValue<ISharePointUserCollection>(); }
 
@@ -1308,7 +1312,7 @@ namespace PnP.Core.Model.SharePoint
         public async Task<ISearchResult> SearchAsync(SearchOptions query)
         {
             var apiCall = BuildSearchApiCall(query);
-            var response = await RawRequestAsync(apiCall, HttpMethod.Get).ConfigureAwait(false);
+            var response = await RawRequestAsync(apiCall, HttpMethod.Post).ConfigureAwait(false);
 
             SearchResult searchResult = new SearchResult();
             ProcessSearchResults(searchResult, response.Json);
@@ -1339,7 +1343,7 @@ namespace PnP.Core.Model.SharePoint
                 ProcessSearchResults(apiCall.RawSingleResult as SearchResult, json);
             };
 
-            var batchRequest = await RawRequestBatchAsync(batch, apiCall, HttpMethod.Get).ConfigureAwait(false);
+            var batchRequest = await RawRequestBatchAsync(batch, apiCall, HttpMethod.Post).ConfigureAwait(false);
             return new BatchSingleResult<ISearchResult>(batch, batchRequest.Id, apiCall.RawSingleResult as ISearchResult);
         }
 
@@ -1355,7 +1359,10 @@ namespace PnP.Core.Model.SharePoint
                 var parsedSearchResult = JsonSerializer.Deserialize<JsonElement>(json);
                 if (parsedSearchResult.ValueKind != JsonValueKind.Null)
                 {
-                    searchResult.ElapsedTime = parsedSearchResult.GetProperty("ElapsedTime").GetInt32();
+                    if (parsedSearchResult.TryGetProperty("ElapsedTime", out JsonElement elapsedTime))
+                    {
+                        searchResult.ElapsedTime = parsedSearchResult.GetProperty("ElapsedTime").GetInt32();
+                    }
 
                     // Process the result rows
                     if (parsedSearchResult.TryGetProperty("PrimaryQueryResult", out JsonElement primaryQueryResult) &&
@@ -1534,65 +1541,88 @@ namespace PnP.Core.Model.SharePoint
 
         private ApiCall BuildSearchApiCall(SearchOptions query)
         {
-            StringBuilder uriBuilder = new StringBuilder();
+            var endpointUri = $"_api/search/postquery";
 
-            uriBuilder.AppendFormat("_api/search/query?querytext='{0}'", HttpUtility.UrlEncode(query.Query?.Replace("'", "''")));
+            dynamic request = new
+            {
+                Querytext = query.Query,
+                EnableQueryRules = false,
+                SourceId = query.ResultSourceId,
+            }.AsExpando();
 
-            if (query.TrimDuplicates == true)
+            // The default is true
+            if (!query.TrimDuplicates)
             {
-                uriBuilder.Append("&trimduplicates=true");
-            }
-            else
-            {
-                uriBuilder.Append("&trimduplicates=false");
+                request.TrimDuplicates = false;
             }
 
             if (query.StartRow.HasValue && query.StartRow.Value > 0)
             {
-                uriBuilder.AppendFormat("&startrow={0}", query.StartRow.Value);
+                request.StartRow = query.StartRow.Value;
             }
 
             if (query.RowsPerPage.HasValue)
             {
-                uriBuilder.AppendFormat("&rowsperpage={0}", query.RowsPerPage.Value);
+                request.RowsPerPage = query.RowsPerPage.Value;
             }
 
             if (query.RowLimit.HasValue && query.RowLimit.Value > 0)
             {
-                uriBuilder.AppendFormat("&rowlimit={0}", query.RowLimit.Value);
+                request.RowLimit = query.RowLimit.Value;
             }
             else if (query.RowsPerPage.HasValue)
             {
-                uriBuilder.AppendFormat("&rowlimit={0}", query.RowsPerPage.Value);
+                request.RowLimit = query.RowsPerPage.Value;
             }
 
             if (query.SelectProperties.Count > 0)
             {
-                uriBuilder.AppendFormat("&selectproperties='{0}'", HttpUtility.UrlEncode(string.Join(",", query.SelectProperties)));
+                request.SelectProperties = new
+                {
+                    results = query.SelectProperties.ToArray(),
+                };
             }
 
             if (query.SortProperties.Count > 0)
             {
-                uriBuilder.AppendFormat("&sortlist='{0}'", HttpUtility.UrlEncode(string.Join(",", query.SortProperties)));
+                request.SortList = new
+                {
+                    results = query.SortProperties.Select(o => new
+                    {
+                        Property = o.Property,
+                        Direction = o.Sort,
+                    }).ToArray()
+                };
             }
 
             if (query.RefineProperties.Count > 0)
             {
-                uriBuilder.AppendFormat("&refiners='{0}'", HttpUtility.UrlEncode(string.Join(",", query.RefineProperties)));
+                request.Refiners = string.Join(",", query.RefineProperties);
+            }
+
+            if (query.RefinementFilters.Count > 0)
+            {
+                request.RefinementFilters = new
+                {
+                    results = query.RefinementFilters.ToArray()
+                };
             }
 
             if (!string.IsNullOrEmpty(query.ClientType))
             {
-                uriBuilder.AppendFormat("&clienttype='{0}'", query.ClientType);
+                request.ClientType = query.ClientType;
             }
 
-            uriBuilder.Append("&enablequeryrules=false");
+            var body = new
+            {
+                request
+            };
 
-            uriBuilder.AppendFormat("&sourceid='{0}'", HttpUtility.UrlEncode(query.ResultSourceId));
-
-            return new ApiCall(uriBuilder.ToString(), ApiType.SPORest);
+            var jsonBody = JsonSerializer.Serialize(body);
+            return new ApiCall(endpointUri, ApiType.SPORest, jsonBody);
         }
-        #endregion
+
+        #endregion Search
 
         #region Web Templates
 
@@ -1764,7 +1794,7 @@ namespace PnP.Core.Model.SharePoint
 
             return await UnfurlHandler.UnfurlAsync(PnPContext, link, unfurlOptions).ConfigureAwait(false);
         }
-        
+
         public IUnfurledResource UnfurlLink(string link, UnfurlOptions unfurlOptions = null)
         {
             return UnfurlLinkAsync(link, unfurlOptions).GetAwaiter().GetResult();
@@ -1894,7 +1924,7 @@ namespace PnP.Core.Model.SharePoint
         #endregion
 
         #region Get WSS Id for term
-        
+
         public async Task<int> GetWssIdForTermAsync(string termId)
         {
             if (TaxonomyHiddenList == null)
@@ -1927,6 +1957,175 @@ namespace PnP.Core.Model.SharePoint
             return GetWssIdForTermAsync(termId).GetAwaiter().GetResult();
         }
 
+        #endregion
+
+        #region User effective permissions
+
+        public IBasePermissions GetUserEffectivePermissions(string userPrincipalName)
+        {
+            return GetUserEffectivePermissionsAsync(userPrincipalName).GetAwaiter().GetResult();
+        }
+
+        public async Task<IBasePermissions> GetUserEffectivePermissionsAsync(string userPrincipalName)
+        {
+            if (string.IsNullOrEmpty(userPrincipalName))
+            {
+                throw new ArgumentNullException(PnPCoreResources.Exception_UserPrincipalNameEmpty);
+            }
+
+            var apiCall = BuildGetUserEffectivePermissionsApiCall(userPrincipalName);
+
+            var response = await RawRequestAsync(apiCall, HttpMethod.Get).ConfigureAwait(false);
+
+            if (string.IsNullOrEmpty(response.Json))
+            {
+                throw new Exception(PnPCoreResources.Exception_EffectivePermissionsNotFound);
+            }
+
+            return EffectivePermissionsHandler.ParseGetUserEffectivePermissionsResponse(response.Json);
+        }
+
+        private static ApiCall BuildGetUserEffectivePermissionsApiCall(string userPrincipalName)
+        {
+            return new ApiCall($"_api/web/getusereffectivepermissions('{HttpUtility.UrlEncode("i:0#.f|membership|")}{userPrincipalName}')", ApiType.SPORest);
+        }
+
+        public bool CheckIfUserHasPermissions(string userPrincipalName, PermissionKind permissionKind)
+        {
+            return CheckIfUserHasPermissionsAsync(userPrincipalName, permissionKind).GetAwaiter().GetResult();
+        }
+
+        public async Task<bool> CheckIfUserHasPermissionsAsync(string userPrincipalName, PermissionKind permissionKind)
+        {
+            var basePermissions = await GetUserEffectivePermissionsAsync(userPrincipalName).ConfigureAwait(false);
+            return basePermissions.Has(permissionKind);
+        }
+
+        #endregion
+
+        #region Reindex web
+        public async Task ReIndexAsync()
+        {
+            var webInfo = await GetAsync(p => p.EffectiveBasePermissions, 
+                                         p => p.AllProperties, 
+                                         p => p.Lists.QueryProperties(p => p.Title,
+                                                                      p => p.NoCrawl, 
+                                                                      p => p.RootFolder.QueryProperties(p => p.Properties))).ConfigureAwait(false);
+
+            const string reIndexKey = "vti_searchversion";
+
+            // Definition of no-script is not having the AddAndCustomizePages permission
+            if (!webInfo.EffectiveBasePermissions.Has(PermissionKind.AddAndCustomizePages))
+            {
+                // NoScript site, reindex each list separately
+                foreach (var list in webInfo.Lists.AsRequested())
+                {
+                    if (list.NoCrawl)
+                    {
+                        PnPContext.Logger.LogInformation($"List {list.Title} is configured as NoCrawl, reindex request will be skipped.");
+                    }
+                    else
+                    {
+                        int searchVersion = 0;
+
+                        if (list.RootFolder.Properties.Values.ContainsKey(reIndexKey))
+                        {
+                            searchVersion = list.RootFolder.Properties.GetInteger(reIndexKey, 0);
+                        }
+
+                        list.RootFolder.Properties.Values[reIndexKey] = searchVersion + 1;
+
+                        await list.RootFolder.Properties.UpdateAsync().ConfigureAwait(false);
+                    }
+                }
+            }
+            else
+            {
+                // Regular site, we can reindex the site in one go
+
+                int searchVersion = 0;
+
+                if (webInfo.AllProperties.Values.ContainsKey(reIndexKey))
+                {
+                    searchVersion = webInfo.AllProperties.GetInteger(reIndexKey, 0);
+                }
+
+                webInfo.AllProperties.Values[reIndexKey] = searchVersion + 1;
+
+                await webInfo.AllProperties.UpdateAsync().ConfigureAwait(false);
+            }
+        }
+
+        public void ReIndex()
+        {
+            ReIndexAsync().GetAwaiter().GetResult();
+        }
+        #endregion
+
+        #region Indexed properties
+
+        public async Task<bool> AddIndexedPropertyAsync(string propertyName)
+        {
+            if (AllProperties.Values.ContainsKey(propertyName) == false)
+            {
+                return false;
+            }
+
+            var propertyNameAsBase64String = Convert.ToBase64String(Encoding.Unicode.GetBytes(propertyName));
+
+            var indexedProperties = AllProperties.GetString(IndexedPropertyKeysName, string.Empty)
+                .Split(new[] { "|" }, StringSplitOptions.RemoveEmptyEntries).ToList<string>();
+
+            if (indexedProperties.Contains<string>(propertyNameAsBase64String))
+            {
+                return true;
+            }
+
+            indexedProperties.Add(propertyNameAsBase64String);
+
+            AllProperties[IndexedPropertyKeysName] = string.Join("|", indexedProperties) + "|";
+            await AllProperties.UpdateAsync().ConfigureAwait(false);
+
+            return true;
+        }
+
+        public bool AddIndexedProperty(string propertyName)
+        {
+            return AddIndexedPropertyAsync(propertyName).GetAwaiter().GetResult();
+        }
+
+        public async Task<bool> RemoveIndexedPropertyAsync(string propertyName)
+        {
+            var propertyNameAsBase64String = Convert.ToBase64String(Encoding.Unicode.GetBytes(propertyName));
+
+            var indexedProperties = AllProperties.GetString(IndexedPropertyKeysName, string.Empty)
+                .Split(new[] { "|" }, StringSplitOptions.RemoveEmptyEntries).ToList();
+
+            if (indexedProperties.Contains<string>(propertyNameAsBase64String) == false)
+            {
+                return false;
+            }
+
+            indexedProperties.Remove(propertyNameAsBase64String);
+
+            if (indexedProperties.Any())
+            {
+                AllProperties[IndexedPropertyKeysName] = string.Join("|", indexedProperties) + "|";
+            }
+            else
+            {
+                AllProperties[IndexedPropertyKeysName] = string.Empty;
+            }
+
+            await AllProperties.UpdateAsync().ConfigureAwait(false);
+
+            return true;
+        }
+
+        public bool RemoveIndexedProperty(string propertyName)
+        {
+            return RemoveIndexedPropertyAsync(propertyName).GetAwaiter().GetResult();
+        }
         #endregion
 
         #endregion
