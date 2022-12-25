@@ -747,6 +747,85 @@ namespace PnP.Core.Model.SharePoint
         /// <returns>A <see cref="List{T}"/> of found files as type <see cref="IFile"/></returns>
         Task<List<IFile>> FindFilesAsync(string match);
 
+        /// <summary>
+        /// Gets the user effective permissions of a user for a list
+        /// </summary>
+        /// <param name="userPrincipalName">Login name of the user you wish to retrieve the permissions of</param>
+        /// <returns>Base permissions object that contains the High and the Low permissions</returns>
+        IBasePermissions GetUserEffectivePermissions(string userPrincipalName);
+
+        /// <summary>
+        /// Gets the user effective permissions of a user for a list
+        /// </summary>
+        /// <param name="userPrincipalName">Login name of the user you wish to retrieve the permissions of</param>
+        /// <returns>Base permissions object that contains the High and the Low permissions</returns>
+        Task<IBasePermissions> GetUserEffectivePermissionsAsync(string userPrincipalName);
+
+        /// <summary>
+        /// Checks if a user has a specific kind of permissions to a list
+        /// </summary>
+        /// <param name="userPrincipalName">Login name of the user you wish to check if he has a specific permission</param>
+        /// <param name="permissionKind">Permission kind to check</param>
+        /// <returns>Boolean that says if the user has permissions or not</returns>
+        bool CheckIfUserHasPermissions(string userPrincipalName, PermissionKind permissionKind);
+
+        /// <summary>
+        /// Checks if a user has a specific kind of permissions to a list
+        /// </summary>
+        /// <param name="userPrincipalName">Login name of the user you wish to check if he has a specific permission</param>
+        /// <param name="permissionKind">Permission kind to check</param>
+        /// <returns>Boolean that says if the user has permissions or not</returns>
+        Task<bool> CheckIfUserHasPermissionsAsync(string userPrincipalName, PermissionKind permissionKind);
+
+        /// <summary>
+        /// Gets a list of default column values set (at folder level) for this library
+        /// </summary>
+        /// <returns>List of default column values</returns>
+        Task<List<DefaultColumnValueOptions>> GetDefaultColumnValuesAsync();
+
+        /// <summary>
+        /// Gets a list of default column values set (at folder level) for this library 
+        /// </summary>
+        /// <returns>List of default column values</returns>
+        List<DefaultColumnValueOptions> GetDefaultColumnValues();
+
+        /// <summary>
+        /// Clears the default column values set (at folder level) for this library
+        /// </summary>
+        /// <returns></returns>
+        Task ClearDefaultColumnValuesAsync();
+
+        /// <summary>
+        /// Clears the default column values set (at folder level) for this library
+        /// </summary>
+        /// <returns></returns>
+        void ClearDefaultColumnValues();
+
+        /// <summary>
+        /// Sets the default column value settings (at folder level) for this library
+        /// </summary>
+        /// <param name="defaultColumnValues">List with default column values to set</param>
+        /// <returns></returns>
+        Task SetDefaultColumnValuesAsync(List<DefaultColumnValueOptions> defaultColumnValues);
+
+        /// <summary>
+        /// Sets the default column value settings (at folder level) for this library
+        /// </summary>
+        /// <param name="defaultColumnValues">List with default column values to set</param>
+        /// <returns></returns>
+        void SetDefaultColumnValues(List<DefaultColumnValueOptions> defaultColumnValues);
+
+        /// <summary>
+        /// Reindexes this list
+        /// </summary>
+        /// <returns></returns>
+        Task ReIndexAsync();
+
+        /// <summary>
+        /// Reindexes this list
+        /// </summary>
+        /// <returns></returns>
+        void ReIndex();
         #endregion
     }
 }

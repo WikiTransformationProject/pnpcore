@@ -1,11 +1,11 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFrameworks>netstandard2.0;net5.0;net6.0</TargetFrameworks>
-		<LangVersion>8.0</LangVersion>
+		<TargetFrameworks>netstandard2.0;net5.0;net6.0;net7.0</TargetFrameworks>
+		<LangVersion>10.0</LangVersion>
 		<RootNamespace>PnP.Core.Auth</RootNamespace>
 		<AssemblyName>PnP.Core.Auth</AssemblyName>
-		<Version>1.7.0</Version>
+		<Version>1.8.0</Version>
 		<GeneratePackageOnBuild>false</GeneratePackageOnBuild>
 		<Copyright>PnP 2022</Copyright>
 		<Company>PnP</Company>
@@ -23,6 +23,7 @@
 		<Deterministic>true</Deterministic>
 		<Configurations>Debug;Release</Configurations>
 		<PackageIcon>nugeticon.png</PackageIcon>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<SignAssembly>true</SignAssembly>
 		<AssemblyOriginatorKeyFile>..\pnp.core.snk</AssemblyOriginatorKeyFile>
 	</PropertyGroup>
@@ -42,7 +43,7 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="6.0.0">
+		<PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="7.0.0-*">
 			<PrivateAssets>all</PrivateAssets>
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
@@ -54,6 +55,10 @@
 		<None Include="nugeticon.png">
 			<Pack>True</Pack>
 			<PackagePath></PackagePath>
+		</None>
+		<None Include="..\..\..\LICENSE">
+		  <Pack>True</Pack>
+		  <PackagePath>\</PackagePath>
 		</None>
 	</ItemGroup>
 

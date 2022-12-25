@@ -406,9 +406,12 @@ namespace PnP.Core.Model.SharePoint
         /// <summary>
         /// Gets the current user in the current context
         /// </summary>
-#pragma warning disable CA1721 // Property names should not match get methods
         public ISharePointUser CurrentUser { get; }
-#pragma warning restore CA1721 // Property names should not match get methods
+
+        /// <summary>
+        /// Gets the web's author
+        /// </summary>
+        public ISharePointUser Author { get; }
 
         /// <summary>
         /// Collection of lists in the current Web object.
@@ -1344,6 +1347,89 @@ namespace PnP.Core.Model.SharePoint
         /// <param name="termId">Id of the term to lookup</param>
         /// <returns>Id of the term in the taxonomy hidden list, otherwise -1</returns>
         int GetWssIdForTerm(string termId);
+        #endregion
+
+        #region Effective user permissions
+
+        /// <summary>
+        /// Gets the user effective permissions of a user for a web
+        /// </summary>
+        /// <param name="userPrincipalName">Login name of the user you wish to retrieve the permissions of</param>
+        /// <returns>Base permissions object that contains the High and the Low permissions</returns>
+        IBasePermissions GetUserEffectivePermissions(string userPrincipalName);
+
+        /// <summary>
+        /// Gets the user effective permissions of a user for a web
+        /// </summary>
+        /// <param name="userPrincipalName">Login name of the user you wish to retrieve the permissions of</param>
+        /// <returns>Base permissions object that contains the High and the Low permissions</returns>
+        Task<IBasePermissions> GetUserEffectivePermissionsAsync(string userPrincipalName);
+
+        /// <summary>
+        /// Checks if a user has a specific kind of permissions to a web
+        /// </summary>
+        /// <param name="userPrincipalName">Login name of the user you wish to check if he has a specific permission</param>
+        /// <param name="permissionKind">Permission kind to check</param>
+        /// <returns>Boolean that says if the user has permissions or not</returns>
+        bool CheckIfUserHasPermissions(string userPrincipalName, PermissionKind permissionKind);
+
+        /// <summary>
+        /// Checks if a user has a specific kind of permissions to a web
+        /// </summary>
+        /// <param name="userPrincipalName">Login name of the user you wish to check if he has a specific permission</param>
+        /// <param name="permissionKind">Permission kind to check</param>
+        /// <returns>Boolean that says if the user has permissions or not</returns>
+        Task<bool> CheckIfUserHasPermissionsAsync(string userPrincipalName, PermissionKind permissionKind);
+
+        #endregion
+
+        #region Reindex web
+        /// <summary>
+        /// Reindexes this web
+        /// </summary>
+        /// <returns></returns>
+        Task ReIndexAsync();
+
+        /// <summary>
+        /// Reindexes this web
+        /// </summary>
+        /// <returns></returns>
+        void ReIndex();
+
+        #endregion
+
+        #region Indexed properties
+        
+        /// <summary>
+        /// Adds a web property as an indexed property
+        /// </summary>
+        /// <remarks>The property must already exist as metadata of the Web</remarks>
+        /// <param name="propertyName">The property name</param>
+        /// <returns>True if it was successfully added or if it is already exists otherwise false</returns>
+        public Task<bool> AddIndexedPropertyAsync(string propertyName);
+
+        /// <summary>
+        /// Adds a web property as an indexed property
+        /// </summary>
+        /// <remarks>The property must already exist as metadata of the Web</remarks>
+        /// <param name="propertyName">The property name</param>
+        /// <returns>True if it was successfully added or if it is already exists otherwise false</returns>
+        public bool AddIndexedProperty(string propertyName);
+
+        /// <summary>
+        /// Removes a web propetry from the indexed properties
+        /// </summary>
+        /// <param name="propertyName">The property name</param>
+        /// <returns>True if it was successfully removed otherwise false</returns>
+        public Task<bool> RemoveIndexedPropertyAsync(string propertyName);
+
+        /// <summary>
+        /// Removes a web propetry from the indexed properties
+        /// </summary>
+        /// <param name="propertyName">The property name</param>
+        /// <returns>True if it was successfully removed otherwise false</returns>
+        public bool RemoveIndexedProperty(string propertyName);
+
         #endregion
 
         #endregion

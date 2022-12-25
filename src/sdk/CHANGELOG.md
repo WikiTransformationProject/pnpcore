@@ -6,6 +6,48 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/).
 
+## [1.8.0]
+
+### Added
+
+- Added support for using RefinementFilters via the `IWeb.Search` methods #924 [lroos - Llewellyn Roos]
+- Adds Getusereffectivepermissions for IWeb, IList and IListItem #926 [MathijsVerbeeck - Mathijs Verbeeck]
+- Added license information in the generated Nuget packages #945 [clurdish - Landon Petzoldt]
+- `Author` property for `IWeb` #947 [jansenbe - Bert Jansen]
+- `IPnPContext` interface on `PnPContext` to support mocking for use in testing #948 [jansenbe - Bert Jansen]
+- Support for getting, setting and clearing of (folder based) column defaults #949 [jansenbe - Bert Jansen]
+- Requesting re-indexing of a web or list #950 [jansenbe - Bert Jansen]
+- RateLimit header processing capability, turned off by default [jansenbe - Bert Jansen]
+- Added `DeleteRecycledSiteCollection` methods to delete site collections from the recycle bin [jansenbe - Bert Jansen]
+- Admin library: ability to specify ResourceBehaviorOptions when creating a Group using application permissions #978 [koenzomers - Koen Zomers]
+- Admin library: Ability to specify members on team site creation time #981 [LeHailender - Jens Haile]
+- Added add and remove functionality for indexed web properties #1006 [LeHailender - Jens Haile]
+- Added .NET 7 binaries [jansenbe - Bert Jansen]
+- Moved to C# 10 [jansenbe - Bert Jansen]
+- Support for configuring field visibility in display, edit and new forms #999 [jansenbe - Bert Jansen]
+- Add ITermSet.GetTermsByCustomProperty method to retrieve a list of terms with a certain custom property key and value #1021 [mloitzl - Martin Loitzl]
+
+### Changed
+
+- Fix: Wrong if condition combination & instead of && in `BaseQueryableDataModelCollection` method `GetAsyncEnumerator` #911 [jansenbe - Bert Jansen]
+- Fix: Using multiple owners when creating modern team site using delegated permissions failed [jansenbe - Bert Jansen]
+- Simplified model for working url, user, lookup, and taxonomy fields #915 [jansenbe - Bert Jansen]
+- Add KANBAN to the ViewType2 enum #930 [martinlingstuyl - Martin Lingstuyl]
+- Add MODERNCALENDAR  to the ViewType2 enum #939 [martinlingstuyl - Martin Lingstuyl]
+- Fix search sort direction with new POST approach #937 [lroos - Llewellyn Roos]
+- Ensure the Name property is loaded #955 [jansenbe - Bert Jansen]
+- VerifyProperties fails to detect other model types loaded via `QueryProperties` as dirty #961 [jansenbe - Bert Jansen]
+- Getting pages with ".aspx" in file name fails #974 [jansenbe - Bert Jansen]
+- Fix for failure at getting list items with a column entitled "Comments" #979 [jansenbe - Bert Jansen]
+- Adding missing property IsVisible property to AdaptiveCardAction #986 [koenzomers - Koen Zomers]
+- GetAvailableThemesAsync throws exception when 'isInverted' or 'name' values missing from JSON response #990 [jansenbe - Bert Jansen]
+- Lists.GetByTitle should be case insensitive #991 [jansenbe - Bert Jansen]
+- Making RichTextEditorInstanceId setable to enable consuming libraries to set inline images #997 [heinrich-ulbricht - Heinrich Ulbricht]
+- Escape characters in inline image `Caption`, `AltText` and `Link` properties to prevent malformed JSON #995 [jansenbe - Bert Jansen]
+- Added support for also loading the additional fields returned by a lookup field when using `LoadListDataAsStreamAsync` [jansenbe - Bert Jansen]
+- Drop redundant Microsoft.Extensions.Logging.Abstractions reference [jansenbe - Bert Jansen]
+- Moved to a language neutral approach for translating SharePoint timezones to .NET `TimeZoneInfo` instances and provided a new public `GetTimeZoneInfo` method on `ITimeZone` [jansenbe - Bert Jansen]
+
 ## [1.7.0]
 
 ### Added

@@ -7,6 +7,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace PnP.Core.Test.SharePoint
@@ -19,6 +20,22 @@ namespace PnP.Core.Test.SharePoint
         {
             // Configure mocking default for all tests in this class, unless override by a specific test
             //TestCommon.Instance.Mocking = false;
+        }
+
+        [TestMethod]
+        public async Task CaseInsensitiveListByTitle()
+        {
+            //TestCommon.Instance.Mocking = false;
+            using (var context = await TestCommon.Instance.GetContextAsync(TestCommon.TestSite))
+            {
+                var list = context.Web.Lists.GetByTitle("Site pages", p=>p.Title, p=>p.Fields.QueryProperties(p=>p.InternalName));
+                Assert.IsTrue(list != null);
+                Assert.IsTrue(list.Fields.AsRequested().Count() > 0);
+                Assert.IsTrue(list.Fields.AsRequested().First().IsPropertyAvailable(p => p.InternalName));
+
+                var list2 = context.Web.Lists.GetByTitle("Site Page");
+                Assert.IsTrue(list2 == null);
+            }         
         }
 
         [TestMethod]
@@ -1917,6 +1934,179 @@ namespace PnP.Core.Test.SharePoint
             }
         }
 
+        #endregion
+
+        #region Effective user permissions
+
+        [TestMethod]
+        public async Task GetEffectiveUserPermissionsAsyncTest()
+        {
+            //TestCommon.Instance.Mocking = false;
+            using (var context = await TestCommon.Instance.GetContextAsync(TestCommon.TestSite))
+            {
+                var list = await context.Web.Lists.GetByTitleAsync("Documents");
+
+                var siteUser = await context.Web.SiteUsers.FirstOrDefaultAsync(y => y.PrincipalType == Model.Security.PrincipalType.User);
+
+                var basePermissions = await list.GetUserEffectivePermissionsAsync(siteUser.UserPrincipalName);
+
+                Assert.IsNotNull(basePermissions);
+            }
+        }
+
+
+        [TestMethod]
+        public async Task CheckIfUserHasPermissionsAsyncTest()
+        {
+            //TestCommon.Instance.Mocking = false;
+            using (var context = await TestCommon.Instance.GetContextAsync(TestCommon.TestSite))
+            {
+                var list = await context.Web.Lists.GetByTitleAsync("Documents");
+
+                var siteUser = await context.Web.SiteUsers.FirstOrDefaultAsync(y => y.PrincipalType == Model.Security.PrincipalType.User);
+
+                var hasPermissions = await list.CheckIfUserHasPermissionsAsync(siteUser.UserPrincipalName, PermissionKind.AddListItems);
+
+                Assert.IsNotNull(hasPermissions);
+            }
+        }
+
+        [ExpectedException(typeof(ArgumentNullException))]
+        [TestMethod]
+        public async Task CheckIfUserHasPermissionsExceptionAsyncTest()
+        {
+            //TestCommon.Instance.Mocking = false;
+            using (var context = await TestCommon.Instance.GetContextAsync(TestCommon.TestSite))
+            {
+                var list = await context.Web.Lists.GetByTitleAsync("Documents");
+
+                var hasPermissions = await list.CheckIfUserHasPermissionsAsync(null, PermissionKind.AddListItems);
+            }
+        }
+
+        #endregion
+
+        #region Default column value tests
+
+        [TestMethod]
+        public async Task DefaultValueTest()
+        {
+            //TestCommon.Instance.Mocking = false;
+            using (var context = await TestCommon.Instance.GetContextAsync(TestCommon.TestSite))
+            {
+                // Add a new library
+                string listTitle = TestCommon.GetPnPSdkTestAssetName("DefaultValueTest");
+                IList myList = null;
+                try
+                {
+                    myList = context.Web.Lists.GetByTitle(listTitle);
+
+                    if (TestCommon.Instance.Mocking && myList != null)
+                    {
+                        Assert.Inconclusive("Test data set should be setup to not have the list available.");
+                    }
+
+                    if (myList == null)
+                    {
+                        myList = await context.Web.Lists.AddAsync(listTitle, ListTemplateType.DocumentLibrary);
+                        myList.Fields.AddText("MyField");
+                    }
+
+                    // Add some folders to put default values on
+                    var batch = context.NewBatch();
+                    myList.RootFolder.AddFolderBatch(batch, "Folder1");
+                    myList.RootFolder.AddFolderBatch(batch, "Folder2");
+                    context.Execute(batch);
+
+                    // Set default values on these folders
+                    List<DefaultColumnValueOptions> defaultColumnValues = new()
+                    {
+                        new DefaultColumnValueOptions
+                        {
+                            FolderRelativePath = "/Folder1",
+                            FieldInternalName = "MyField",
+                            DefaultValue = "F1"
+                        },
+                        new DefaultColumnValueOptions
+                        {
+                            FolderRelativePath = "/Folder2",
+                            FieldInternalName = "MyField",
+                            DefaultValue = "F2"
+                        }
+                    };
+
+                    myList.SetDefaultColumnValues(defaultColumnValues);
+
+                    // Load the default values again
+                    var loadedDefaults = myList.GetDefaultColumnValues();
+
+                    // verify that each added value was actually added
+                    foreach(var addedValue in defaultColumnValues)
+                    {
+                        var foundValue = loadedDefaults.FirstOrDefault(p=>p.FolderRelativePath == addedValue.FolderRelativePath && 
+                                                                       p.DefaultValue == addedValue.DefaultValue && p.FieldInternalName == addedValue.FieldInternalName);
+                        Assert.IsTrue(foundValue != null);
+                    }
+
+                    // Clean the default values again
+                    myList.ClearDefaultColumnValues();
+
+                    // Load the default values again
+                    loadedDefaults = myList.GetDefaultColumnValues();
+
+                    Assert.IsFalse(loadedDefaults.Any());
+
+                }
+                finally
+                {
+                    myList.Delete();
+                }
+            }
+        }
+
+        #endregion
+
+        #region reindex tests
+        [TestMethod]
+        public async Task ReIndexListTest()
+        {
+            //TestCommon.Instance.Mocking = false;
+            using (var context = await TestCommon.Instance.GetContextAsync(TestCommon.TestSite))
+            {
+                // Add a new library
+                string listTitle = TestCommon.GetPnPSdkTestAssetName("ReIndexListTest");
+                IList myList = null;
+                try
+                {
+                    myList = context.Web.Lists.GetByTitle(listTitle);
+
+                    if (TestCommon.Instance.Mocking && myList != null)
+                    {
+                        Assert.Inconclusive("Test data set should be setup to not have the list available.");
+                    }
+
+                    if (myList == null)
+                    {
+                        myList = await context.Web.Lists.AddAsync(listTitle, ListTemplateType.DocumentLibrary);
+                    }
+
+                    // Reindex the list 
+                    myList.ReIndex();
+
+                    if (!TestCommon.Instance.Mocking)
+                    {
+                        Thread.Sleep(2000); 
+                    }
+
+                    // Reindex again
+                    myList.ReIndex();
+                }
+                finally
+                {
+                    myList.Delete();
+                }
+            }
+        }
         #endregion
     }
 }
