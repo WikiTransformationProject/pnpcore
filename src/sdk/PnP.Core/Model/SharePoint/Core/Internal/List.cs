@@ -1487,7 +1487,8 @@ namespace PnP.Core.Model.SharePoint
 
         public async Task SetDefaultColumnValuesAsync(List<DefaultColumnValueOptions> defaultColumnValues)
         {
-
+            try
+            {
             if (defaultColumnValues == null || !defaultColumnValues.Any())
             {
                 // Setting nothing means clearing the existing values
@@ -1571,7 +1572,12 @@ namespace PnP.Core.Model.SharePoint
                     ReceiverClass = "Microsoft.Office.DocumentManagement.LocationBasedMetadataDefaultsReceiver"
                 }).ConfigureAwait(false);
             }
-
+            } catch (Exception e)
+            {
+                // HEU: make provisioning work despite https://github.com/pnp/powershell/issues/2814 & https://github.com/pnp/pnpframework/issues/838; we won't set default values via template
+                // HEU: setting/clearing default values will be invoked even if we have no default values specified
+                PnPContext.Logger.LogWarning($"Exception thrown while setting default values; ignoring default values and continuing; Error message: {e.Message}");
+            }
         }
 
         public void SetDefaultColumnValues(List<DefaultColumnValueOptions> defaultColumnValues)
