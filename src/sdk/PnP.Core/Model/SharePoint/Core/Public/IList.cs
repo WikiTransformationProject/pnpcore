@@ -147,6 +147,11 @@ namespace PnP.Core.Model.SharePoint
         public string DefaultNewFormUrl { get; set; }
 
         /// <summary>
+        /// The url to the default view of this list.
+        /// </summary>
+        public string DefaultViewUrl { get; }
+
+        /// <summary>
         /// Defines a value that specifies the reading order of the list.
         /// </summary>
         public ListReadingDirection Direction { get; set; }
@@ -306,6 +311,14 @@ namespace PnP.Core.Model.SharePoint
         /// and <see href="https://pnp.github.io/pnpcore/using-the-sdk/basics-iqueryable.html">IQueryable performance considerations</see> to learn more.
         /// </summary>
         public IEventReceiverDefinitionCollection EventReceivers { get; }
+
+        /// <summary>
+        /// Gets a value that specifies the collection of user custom actions for this list
+        /// Implements <see cref="IQueryable{T}"/>. <br />
+        /// See <see href="https://pnp.github.io/pnpcore/using-the-sdk/basics-getdata.html#requesting-model-collections">Requesting model collections</see> 
+        /// and <see href="https://pnp.github.io/pnpcore/using-the-sdk/basics-iqueryable.html">IQueryable performance considerations</see> to learn more.
+        /// </summary>
+        public IUserCustomActionCollection UserCustomActions { get; }
 
         /// <summary>
         /// A special property used to add an asterisk to a $select statement
@@ -826,6 +839,18 @@ namespace PnP.Core.Model.SharePoint
         /// </summary>
         /// <returns></returns>
         void ReIndex();
+
+        /// <summary>
+        /// Enable audience targeting for a list
+        /// </summary>
+        /// <returns></returns>
+        Task EnableAudienceTargetingAsync();
+
+        /// <summary>
+        /// Enable audience targeting for a list
+        /// </summary>
+        /// <returns></returns>
+        void EnableAudienceTargeting();
         #endregion
     }
 }

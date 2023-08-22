@@ -17,11 +17,26 @@ namespace PnP.Core.Model.SharePoint
 {
     internal sealed class Page : IPage
     {
-        private const string inlineImageHtml = "<div tabindex=\"-1\" data-cke-widget-wrapper=\"1\" data-cke-filter=\"off\" class=\"cke_widget_wrapper cke_widget_block cke_widget_inlineimage cke_widget_wrapper_webPartInRteInlineImage cke_widget_wrapper_{ImageAlignment} cke_widget_wrapper_webPartInRte\" data-cke-display-name=\"div\" data-cke-widget-id=\"0\" role=\"region\" aria-label=\"Inline image in RTE. Use Alt + F11 to go to toolbar. Use Alt + P to open the property pane.\"><div data-webpart-id=\"image\" class=\"webPartInRte {ImageAlignment} webPartInRteInlineImage cke_widget_element\" data-cke-widget-data=\"%7B%22classes%22%3A%7B%22webPartInRteInlineImage%22%3A1%2C%22{ImageAlignment}%22%3A1%2C%22webPartInRte%22%3A1%7D%7D\" data-cke-widget-upcasted=\"1\" data-cke-widget-keep-attr=\"0\" data-widget=\"inlineimage\" data-instance-id=\"{TextEditorInstanceId}\" title=\"\"></div></div>";
+        private const string inlineImageCK4Html = "<div tabindex=\"-1\" data-cke-widget-wrapper=\"1\" data-cke-filter=\"off\" class=\"cke_widget_wrapper cke_widget_block cke_widget_inlineimage cke_widget_wrapper_webPartInRteInlineImage cke_widget_wrapper_{ImageAlignment} cke_widget_wrapper_webPartInRte\" data-cke-display-name=\"div\" data-cke-widget-id=\"0\" role=\"region\" aria-label=\"Inline image in RTE. Use Alt + F11 to go to toolbar. Use Alt + P to open the property pane.\"><div data-webpart-id=\"image\" class=\"webPartInRte {ImageAlignment} webPartInRteInlineImage cke_widget_element\" data-cke-widget-data=\"%7B%22classes%22%3A%7B%22webPartInRteInlineImage%22%3A1%2C%22{ImageAlignment}%22%3A1%2C%22webPartInRte%22%3A1%7D%7D\" data-cke-widget-upcasted=\"1\" data-cke-widget-keep-attr=\"0\" data-widget=\"inlineimage\" data-instance-id=\"{TextEditorInstanceId}\" title=\"\"></div></div>";
+        private const string inlineImageCK5Html = "<div class=\"imagePlugin\" style=\"background-color:transparent;position:relative;\" data-alignment=\"{ImageAlignment}\" data-imageurl=\"{ImageUrl}\" data-uploading=\"0\" data-height=\"{ImageHeight}\" data-width=\"{ImageWidth}\" data-widthpercentage=\"{WidthPercentage}\" data-captiontext=\"{ImageCaption}\" data-alttext=\"{ImageAlternativeText}\" data-linkurl=\"{ImageLinkUrl}\"></div>";
         private const string inlineImageTextControl = "{TextEditorInstanceId}";
         private const string inlineImageAlignment = "{ImageAlignment}";
+        private const string inlineImageUrl = "{ImageUrl}";
+        private const string inlineImageLinkUrl = "{ImageLinkUrl}";
+        private const string inlineImageCaption = "{ImageCaption}";
+        private const string inlineImageAlternativeText = "{ImageAlternativeText}";
+        private const string inlineImageWidth = "{ImageWidth}";
+        private const string inlineImageHeight = "{ImageHeight}";
+        private const string inlineWidthPercentage = "{WidthPercentage}";
 
-        private bool isDefaultDescription = true;
+    // page settings defaults
+    private bool isDefaultDescription = true;
+        private bool isSpellCheckEnabled = true;
+        private int globalRichTextStylingVersion = 1;
+        private bool isEmailReady = false;
+        private string[] pageSettingsSliceHtmlAttributes;
+        private EditorType editorType = EditorType.CK4;
+
         private string pageTitle;
         private string pageName;
         private static readonly Expression<Func<IList, object>>[] getPagesLibraryExpression = new Expression<Func<IList, object>>[] {p => p.Title, p => p.TemplateType, p => p.EnableFolderCreation,
@@ -182,6 +197,19 @@ namespace PnP.Core.Model.SharePoint
                 }
 
                 return null;
+            }
+        }
+
+        public EditorType EditorType
+        {
+            get
+            {
+                return editorType;
+            }
+
+            internal set
+            {
+                editorType = value;
             }
         }
 
@@ -434,6 +462,11 @@ namespace PnP.Core.Model.SharePoint
 
         internal async static Task<IPage> NewPageAsync(PnPContext context, PageLayoutType pageLayoutType = PageLayoutType.Article)
         {
+            if (pageLayoutType == PageLayoutType.Topic || pageLayoutType == PageLayoutType.NewsDigest)
+            {
+                throw new ClientException(ErrorType.Unsupported, PnPCoreResources.Exception_Page_NotSupportedPageTypeForCreate);
+            }
+
             // Get a reference to the pages library, reuse the existing one if the correct properties were loaded
             IList pagesLibrary = await EnsurePagesLibraryAsync(context).ConfigureAwait(false);
             return new Page(context, pagesLibrary, null, pageLayoutType);
@@ -941,10 +974,32 @@ namespace PnP.Core.Model.SharePoint
             foreach (var section in sections.OrderBy(p => p.Order))
             {
                 html.Append((section as CanvasSection).ToHtml());
-
             }
+
             // Thumbnail
-            var thumbnailData = new { controlType = 0, pageSettingsSlice = new { isDefaultDescription, isDefaultThumbnail = string.IsNullOrEmpty(ThumbnailUrl) } };
+            var pageSettingsSlice = new PageSettingsSlice
+            {
+                IsDefaultDescription = isDefaultDescription,
+                IsDefaultThumbnail = string.IsNullOrEmpty(ThumbnailUrl),
+                GlobalRichTextStylingVersion = globalRichTextStylingVersion,
+                IsSpellCheckEnabled = isSpellCheckEnabled,
+                IsEmailReady = isEmailReady,
+                RtePageSettings = new RtePageSettings
+                {
+                    contentVersion = editorType == EditorType.CK5 ? 5 : 4
+                },
+            };
+
+            object thumbnailData = null;
+            if (pageSettingsSliceHtmlAttributes != null)
+            {
+                thumbnailData = new { controlType = 0, pageSettingsSlice, htmlAttributes = pageSettingsSliceHtmlAttributes };
+            }
+            else
+            {
+                thumbnailData = new { controlType = 0, pageSettingsSlice };
+            }
+
             html.Append($@"<div data-sp-canvascontrol="""" data-sp-canvasdataversion=""1.0"" data-sp-controldata=""{JsonSerializer.Serialize(thumbnailData).Replace("\"", "&quot;")}""></div>");
 
             html.Append("</div>");
@@ -1188,7 +1243,7 @@ namespace PnP.Core.Model.SharePoint
                             {
                                 if (sectionData.Position.LayoutIndex.HasValue)
                                 {
-                                    currentSection.AddColumn(new CanvasColumn(currentSection, sectionData.Position.SectionIndex, sectionData.Position.SectionFactor, sectionData.Position.LayoutIndex.Value));
+                                    currentSection.AddColumn(new CanvasColumn(currentSection, (int)sectionData.Position.SectionIndex, sectionData.Position.SectionFactor, sectionData.Position.LayoutIndex.Value));
                                     currentColumn = currentSection.Columns.Where(p => p.Order == sectionData.Position.SectionIndex && p.LayoutIndex == sectionData.Position.LayoutIndex.Value).First();
 
                                     // ZoneEmphasis on a vertical section column needs to be retained as that "overrides" the zone emphasis set on the section
@@ -1199,7 +1254,7 @@ namespace PnP.Core.Model.SharePoint
                                 }
                                 else
                                 {
-                                    currentSection.AddColumn(new CanvasColumn(currentSection, sectionData.Position.SectionIndex, sectionData.Position.SectionFactor));
+                                    currentSection.AddColumn(new CanvasColumn(currentSection, (int)sectionData.Position.SectionIndex, sectionData.Position.SectionFactor));
                                     currentColumn = currentSection.Columns.Where(p => p.Order == sectionData.Position.SectionIndex).First();
                                 }
                             }
@@ -1228,9 +1283,39 @@ namespace PnP.Core.Model.SharePoint
                                     }
                                 }
                             }
+
                             if (sectionData.PageSettingsSlice.IsDefaultDescription.HasValue)
                             {
                                 isDefaultDescription = sectionData.PageSettingsSlice.IsDefaultDescription.Value;
+                            }
+
+                            if (sectionData.PageSettingsSlice.IsSpellCheckEnabled.HasValue)
+                            {
+                                isSpellCheckEnabled = sectionData.PageSettingsSlice.IsSpellCheckEnabled.Value;
+                            }
+
+                            if (sectionData.PageSettingsSlice.GlobalRichTextStylingVersion.HasValue)
+                            {
+                                globalRichTextStylingVersion = sectionData.PageSettingsSlice.GlobalRichTextStylingVersion.Value;
+                            }
+
+                            if (sectionData.PageSettingsSlice.IsEmailReady.HasValue)
+                            {
+                                isEmailReady = sectionData.PageSettingsSlice.IsEmailReady.Value;
+                            }
+
+                            editorType = EditorType.CK4;
+                            if (sectionData.PageSettingsSlice.RtePageSettings != null)
+                            {
+                                if (sectionData.PageSettingsSlice.RtePageSettings.contentVersion.HasValue && sectionData.PageSettingsSlice.RtePageSettings.contentVersion >= 5)
+                                {
+                                    editorType = EditorType.CK5;
+                                }
+                            }
+
+                            if (sectionData.HtmlAttributes != null)
+                            {
+                                pageSettingsSliceHtmlAttributes = sectionData.HtmlAttributes;
                             }
                         }
                     }
@@ -1340,8 +1425,8 @@ namespace PnP.Core.Model.SharePoint
             // Reindex the control order. We're starting control order from 1 for each column.
             ReIndex();
 
-            // Load page header controls. Cortex Topic pages do have 5 controls in the header (= controls that cannot be moved)
-            if (LayoutType == PageLayoutType.Topic)
+            // Load page header controls. Microsoft Syntex Topic pages do have 5 controls in the header (= controls that cannot be moved)
+            if (LayoutType == PageLayoutType.Topic || LayoutType == PageLayoutType.NewsDigest)
             {
                 using (var document = parser.ParseDocument(pageHeaderHtml))
                 {
@@ -1435,7 +1520,7 @@ namespace PnP.Core.Model.SharePoint
                 {
                     if (position.LayoutIndex.HasValue)
                     {
-                        (currentSection as CanvasSection).AddColumn(new CanvasColumn(currentSection as CanvasSection, position.SectionIndex, position.SectionFactor, position.LayoutIndex.Value));
+                        (currentSection as CanvasSection).AddColumn(new CanvasColumn(currentSection as CanvasSection, (int)position.SectionIndex, position.SectionFactor, position.LayoutIndex.Value));
                         currentColumn = currentSection.Columns.Where(p => p.Order == position.SectionIndex && p.LayoutIndex == position.LayoutIndex.Value).First();
 
                         // ZoneEmphasis on a vertical section column needs to be retained as that "overrides" the zone emphasis set on the section
@@ -1446,7 +1531,7 @@ namespace PnP.Core.Model.SharePoint
                     }
                     else
                     {
-                        (currentSection as CanvasSection).AddColumn(new CanvasColumn(currentSection as CanvasSection, position.SectionIndex, position.SectionFactor));
+                        (currentSection as CanvasSection).AddColumn(new CanvasColumn(currentSection as CanvasSection, (int)position.SectionIndex, position.SectionFactor));
                         currentColumn = currentSection.Columns.Where(p => p.Order == position.SectionIndex).First();
                     }
                 }
@@ -1460,7 +1545,7 @@ namespace PnP.Core.Model.SharePoint
         {
             if (zoneGroupMetadata != null)
             {
-                currentSection.Collapsible = zoneGroupMetadata.IconAlignment != null ? true : false;
+                currentSection.Collapsible = zoneGroupMetadata.Type == 1;
                 currentSection.SectionType = zoneGroupMetadata.Type;
                 currentSection.DisplayName = zoneGroupMetadata.DisplayName;
                 currentSection.IsExpanded = zoneGroupMetadata.IsExpanded;
@@ -1556,16 +1641,16 @@ namespace PnP.Core.Model.SharePoint
 
             var pageHeaderHtml = "";
             if (pageHeader != null && pageHeader.Type != PageHeaderType.None && LayoutType != PageLayoutType.RepostPage
-                && LayoutType != PageLayoutType.Topic)
+                && LayoutType != PageLayoutType.Topic && LayoutType != PageLayoutType.NewsDigest)
             {
                 // this triggers resolving of the header image which has to be done early as otherwise there will be version conflicts
                 // (see here: https://github.com/SharePoint/PnP-Sites-Core/issues/2203)
                 pageHeaderHtml = await pageHeader.ToHtmlAsync(PageTitle).ConfigureAwait(false);
             }
 
-            if (LayoutType == PageLayoutType.Topic)
+            if (LayoutType == PageLayoutType.Topic || LayoutType == PageLayoutType.NewsDigest)
             {
-                // If we have extra header controls (e.g. with topic pages) then we need to persist those controls to a html snippet that will need to be embedded in the header
+                // If we have extra header controls (e.g. with topic and news digest pages) then we need to persist those controls to a html snippet that will need to be embedded in the header
                 if (HeaderControls.Any())
                 {
                     pageHeaderHtml = $"<div>{HeaderControlsToHtml()}</div>";
@@ -1730,6 +1815,10 @@ namespace PnP.Core.Model.SharePoint
                 if (layoutType == PageLayoutType.Home && KeepDefaultWebParts && Sections.Count == 0)
                 {
                     PageListItem[PageConstants.CanvasField] = "";
+                }
+                else if (layoutType == PageLayoutType.NewsDigest)
+                {
+                    // Do nothing, news digest type has empty CanvasContent1 field and can't be edited
                 }
                 else
                 {
@@ -2677,7 +2766,7 @@ namespace PnP.Core.Model.SharePoint
         #region Image handling, including inline
         public async Task<string> GetInlineImageAsync(IPageText textEditorInstance, string serverRelativeUrl, PageImageOptions imageOptions = null)
         {
-            if (textEditorInstance == null)
+            if (EditorType == EditorType.CK4 && textEditorInstance == null)
             {
                 throw new ArgumentNullException(nameof(textEditorInstance));
             }
@@ -2699,28 +2788,65 @@ namespace PnP.Core.Model.SharePoint
                 imageOptions.IsInlineImage = true;
             }
 
-            var inlineImageWebPart = await GetImageWebPartAsync(serverRelativeUrl, imageOptions).ConfigureAwait(false);
-            (inlineImageWebPart as PageWebPart).RichTextEditorInstanceId = textEditorInstance.InstanceId.ToString();
-
-            // Add the image web part to collection of inline web parts
-            (textEditorInstance as PageText).InlineWebParts.Add(inlineImageWebPart as PageWebPart);
-
-            // Prepare the text snippet to insert
-            string alignmentValue = "webPartInRteAlignLeft";
-            if (imageOptions != null)                 
+            if (EditorType == EditorType.CK4)
             {
-                if (imageOptions.Alignment == PageImageAlignment.Center)
-                {
-                    alignmentValue = "webPartInRteAlignCenter";
-                }
-                else if(imageOptions.Alignment == PageImageAlignment.Right)
-                {
-                    alignmentValue = "webPartInRteAlignRight";
-                }
-            }
+                var inlineImageWebPart = await GetImageWebPartAsync(serverRelativeUrl, imageOptions).ConfigureAwait(false);
+                (inlineImageWebPart as PageWebPart).RichTextEditorInstanceId = textEditorInstance.InstanceId.ToString();
 
-            return inlineImageHtml.Replace(inlineImageTextControl, inlineImageWebPart.InstanceId.ToString())
-                                  .Replace(inlineImageAlignment, alignmentValue);
+                // Add the image web part to collection of inline web parts
+                (textEditorInstance as PageText).InlineWebParts.Add(inlineImageWebPart as PageWebPart);
+
+                // Prepare the text snippet to insert
+                string alignmentValue = "webPartInRteAlignLeft";
+                if (imageOptions != null)
+                {
+                    if (imageOptions.Alignment == PageImageAlignment.Center)
+                    {
+                        alignmentValue = "webPartInRteAlignCenter";
+                    }
+                    else if (imageOptions.Alignment == PageImageAlignment.Right)
+                    {
+                        alignmentValue = "webPartInRteAlignRight";
+                    }
+                }
+
+                return inlineImageCK4Html.Replace(inlineImageTextControl, inlineImageWebPart.InstanceId.ToString())
+                                      .Replace(inlineImageAlignment, alignmentValue);
+            }
+            else
+            {
+                // Set defaults in case height and width are not set
+                if (!imageOptions.Height.HasValue)
+                {
+                    // Assume by default 0, aligned with the SPO behavior
+                    imageOptions.Height = 0;
+                }
+
+                if (!imageOptions.Width.HasValue)
+                {
+                    // Assume by default 0, aligned with the SPO behavior
+                    imageOptions.Width = 0;
+                }
+
+                if (!imageOptions.WidthPercentage.HasValue) 
+                {
+                    // Assume by default 100% of the editor width, aligned with the SPO behavior
+                    imageOptions.WidthPercentage = 100;
+                }
+
+                imageOptions.Link ??= "";
+                imageOptions.Caption ??= "";
+                imageOptions.AlternativeText ??= "";
+                
+                return inlineImageCK5Html.Replace(inlineImageUrl, serverRelativeUrl)
+                                         .Replace(inlineImageAlignment, imageOptions.Alignment.ToString())
+                                         .Replace(inlineImageCaption, imageOptions.Caption)
+                                         .Replace(inlineImageAlternativeText, imageOptions.AlternativeText)
+                                         .Replace(inlineImageLinkUrl, imageOptions.Link)
+                                         .Replace(inlineImageWidth, imageOptions.Width.Value.ToString())
+                                         .Replace(inlineImageHeight, imageOptions.Height.Value.ToString())
+                                         .Replace(inlineWidthPercentage, imageOptions.WidthPercentage.Value.ToString());
+            }
         }
 
         public string GetInlineImage(IPageText textEditorInstance, string serverRelativeUrl, PageImageOptions imageOptions = null)
@@ -2738,10 +2864,7 @@ namespace PnP.Core.Model.SharePoint
             // Find the server relative image
             var image = await PnPContext.Web.GetFileByServerRelativeUrlAsync(serverRelativeUrl, p => p.UniqueId, p => p.ListId).ConfigureAwait(false);
 
-            if (imageOptions == null)
-            {
-                imageOptions = new PageImageOptions();
-            }
+            imageOptions ??= new PageImageOptions();
 
             // Set defaults in case height and width are not set
             if (!imageOptions.Height.HasValue)
@@ -2754,20 +2877,9 @@ namespace PnP.Core.Model.SharePoint
                 imageOptions.Width = -1;
             }
 
-            if (imageOptions.Link == null)
-            {
-                imageOptions.Link = "";
-            }
-
-            if (imageOptions.Caption == null)
-            {
-                imageOptions.Caption = "";
-            }
-
-            if (imageOptions.AlternativeText == null)
-            {
-                imageOptions.AlternativeText = "";
-            }
+            imageOptions.Link ??= "";
+            imageOptions.Caption ??= "";
+            imageOptions.AlternativeText ??= "";
 
             // Prepare configuration for the image web part
             string inlineImageWebPart = "{\"webPartData\":{\"serverProcessedContent\":{\"htmlStrings\":{},\"searchablePlainTexts\":{\"captionText\":\"{Caption}\"},\"imageSources\":{\"imageSource\":\"{FullyQualifiedImageUrl}\"},\"links\":{\"linkUrl\":\"{Link}\"},\"customMetadata\":{\"imageSource\":{\"siteId\":\"{SiteId}\",\"webId\":\"{WebId}\",\"listId\":\"{{ListId}}\",\"uniqueId\":\"{UniqueId}\",\"imgWidth\":-1,\"imgHeight\":-1}}},\"dataVersion\":\"1.9\",\"properties\":{\"imageSourceType\":2,\"altText\":\"{AltText}\",\"overlayText\":\"\",\"fileName\":\"\",\"siteId\":\"{SiteId}\",\"webId\":\"{WebId}\",\"listId\":\"{{ListId}}\",\"uniqueId\":\"{UniqueId}\",\"imgWidth\":{Width},\"imgHeight\":{Height},\"alignment\":\"{Alignment}\",\"fixAspectRatio\":false,\"isInlineImage\":{IsInlineImage}}}}";

@@ -9,6 +9,7 @@ using System;
 using System.Collections.Generic;
 using System.Dynamic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Net;
@@ -322,7 +323,7 @@ namespace PnP.Core.Model.SharePoint
         {
             if (!Values.ContainsKey("ContentTypeId"))
             {
-                await LoadKeyListItemProperties().ConfigureAwait(false);
+                await LoadKeyListItemPropertiesAsync().ConfigureAwait(false);
             }
 
             return Values["ContentTypeId"].ToString().StartsWith("0x0101", StringComparison.InvariantCultureIgnoreCase);
@@ -339,7 +340,7 @@ namespace PnP.Core.Model.SharePoint
         {
             if (!Values.ContainsKey("ContentTypeId"))
             {
-                await LoadKeyListItemProperties().ConfigureAwait(false);
+                await LoadKeyListItemPropertiesAsync().ConfigureAwait(false);
             }
 
             return Values["ContentTypeId"].ToString().StartsWith("0x0120", StringComparison.InvariantCultureIgnoreCase);
@@ -354,7 +355,7 @@ namespace PnP.Core.Model.SharePoint
         {
             if (!Values.ContainsKey("FileDirRef"))
             {
-                await LoadKeyListItemProperties().ConfigureAwait(false);
+                await LoadKeyListItemPropertiesAsync().ConfigureAwait(false);
             }
 
             return await PnPContext.Web.GetFolderByServerRelativeUrlAsync(Values["FileDirRef"].ToString()).ConfigureAwait(false);
@@ -364,12 +365,91 @@ namespace PnP.Core.Model.SharePoint
         {
             return GetParentFolderAsync().GetAwaiter().GetResult();
         }
+        
+        #endregion
 
-        private async Task LoadKeyListItemProperties()
+        #region MoveTo
+
+        public async Task MoveToAsync(string destinationFolderUrl)
         {
-            ApiCall apiCall = new ApiCall($"{GetItemUri()}?$select=ContentTypeId,FileDirRef", ApiType.SPORest);
+            if (destinationFolderUrl.StartsWith("/"))
+            {
+                destinationFolderUrl = destinationFolderUrl.TrimStart('/');
+            }
+            
+            if (destinationFolderUrl.EndsWith("/"))
+            {
+                destinationFolderUrl = destinationFolderUrl.TrimEnd('/');
+            }
+            
+            await EnsurePropertiesAsync(item =>
+                item.ParentList.QueryProperties(
+                    l => l.Id,
+                    l => l.RootFolder.QueryProperties(f => f.ServerRelativeUrl)
+                )).ConfigureAwait(false);
+
+            IFolder folder = await PnPContext.Web
+                .GetFolderByServerRelativeUrlAsync($"{ParentList.RootFolder.ServerRelativeUrl}/{destinationFolderUrl}",
+                    f => f.ServerRelativeUrl).ConfigureAwait(false);
+
+            if (!Values.ContainsKey("FileRef"))
+            {
+                await LoadKeyListItemPropertiesAsync().ConfigureAwait(false);
+            }
+
+            var filename = Path.GetFileName(Values["FileRef"].ToString());
+            
+            string destinationUrl =
+                $"{UrlUtility.EnsureAbsoluteUrl(PnPContext.Uri, UrlUtility.EnsureTrailingSlash(folder.ServerRelativeUrl))}{filename}";
+
+            ApiCall apiCall = await GetMoveToApiCallAsync(destinationUrl).ConfigureAwait(false);
+            await RawRequestAsync(apiCall, HttpMethod.Post).ConfigureAwait(false);
+        }
+        
+        public void MoveTo(string destinationFolderUrl)
+        {
+            MoveToAsync(destinationFolderUrl).GetAwaiter().GetResult();
+        }
+
+        private async Task<ApiCall> GetMoveToApiCallAsync(string destinationUrl)
+        {
+            MoveCopyOptions options = new();
+            
+            string destUrl = UrlUtility.EnsureAbsoluteUrl(PnPContext.Uri, destinationUrl).ToString();
+
+            if (!Values.ContainsKey("FileRef"))
+            {
+                await LoadKeyListItemPropertiesAsync().ConfigureAwait(false);
+            }
+
+            string srcUrl = UrlUtility.EnsureAbsoluteUrl(PnPContext.Uri, Values["FileRef"].ToString()).ToString();
+
+            ExpandoObject parameters = new
+            {
+                destPath = new {__metadata = new {type = "SP.ResourcePath"}, DecodedUrl = destUrl},
+                srcPath = new {__metadata = new {type = "SP.ResourcePath"}, DecodedUrl = srcUrl},
+                options = new
+                {
+                    __metadata = new {type = "SP.MoveCopyOptions"},
+                    options.KeepBoth,
+                    options.ResetAuthorAndCreatedOnCopy,
+                    options.RetainEditorAndModifiedOnMove,
+                    options.ShouldBypassSharedLocks
+                }
+            }.AsExpando();
+            string body = JsonSerializer.Serialize(parameters, typeof(ExpandoObject));
+            string copyToEndpointUrl =
+                $"_api/SP.MoveCopyUtil.MoveFileByPath(overwrite=@a1)?@a1=true";
+
+            return new ApiCall(copyToEndpointUrl, ApiType.SPORest, body);
+        }
+
+        private async Task LoadKeyListItemPropertiesAsync()
+        {
+            ApiCall apiCall = new ApiCall($"{GetItemUri()}?$select=ContentTypeId,FileDirRef,FileRef", ApiType.SPORest);
             await RequestAsync(apiCall, HttpMethod.Get).ConfigureAwait(false);
         }
+        
         #endregion
 
         #region Item updates
@@ -633,17 +713,26 @@ namespace PnP.Core.Model.SharePoint
         internal async Task PrepareUpdateCall(UpdateListItemRequest request)
         {
             string listId = "";
-            if (this.Parent is IFile file)
+            if (Parent is IFile file)
             {
                 // When it's a file then we need to resolve the {Parent.Id} token manually as otherwise this 
                 // will point to the File id while we need to list Id here
                 await file.EnsurePropertiesAsync(p => p.ListId).ConfigureAwait(false);
                 listId = file.ListId.ToString();
             }
-
-            if (this.Parent.Parent is IList)
+            else if (Parent is Folder folder)
             {
-                listId = (this.Parent.Parent as IList).Id.ToString();
+                listId = $"{await folder.GetLibraryIdFromFolderAsync().ConfigureAwait(false)}";
+            }
+                        
+            if (listId == "" && Parent.Parent is IList)
+            {
+                listId = (Parent.Parent as IList).Id.ToString();
+            }
+
+            if (string.IsNullOrEmpty(listId))
+            {
+                throw new ClientException(ErrorType.InvalidParameters, PnPCoreResources.Exception_ListItem_CSOMUpdate_MissingListId);
             }
 
             request.ListId = listId;
@@ -1303,7 +1392,7 @@ namespace PnP.Core.Model.SharePoint
         //{
         //    var listId = await GetListIdAsync().ConfigureAwait(false);
 
-        //    var apiCall = new ApiCall($"sites/{PnPContext.Site.Id}/lists/{listId}/items/{Id}/permissions?$filter=Link ne null", ApiType.GraphBeta);
+        //    var apiCall = new ApiCall($"sites/{PnPContext.Uri.DnsSafeHost},{PnPContext.Site.Id},{PnPContext.Web.Id}/lists/{listId}/items/{Id}/permissions?$filter=Link ne null", ApiType.GraphBeta);
         //    var response = await RawRequestAsync(apiCall, HttpMethod.Get).ConfigureAwait(false);
 
         //    if (string.IsNullOrEmpty(response.Json))
@@ -1371,7 +1460,7 @@ namespace PnP.Core.Model.SharePoint
 
             if (anonymousLinkOptions.ExpirationDateTime != DateTime.MinValue)
             {
-                body.expirationDateTime = anonymousLinkOptions.ExpirationDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ");
+                body.expirationDateTime = anonymousLinkOptions.ExpirationDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
             }
 
             return await CreateSharingLinkAsync(body).ConfigureAwait(false);
@@ -1386,7 +1475,7 @@ namespace PnP.Core.Model.SharePoint
         {
             var listId = await GetListIdAsync().ConfigureAwait(false);
 
-            var apiCall = new ApiCall($"sites/{PnPContext.Site.Id}/lists/{listId}/items/{Id}/createLink", ApiType.GraphBeta, jsonBody: JsonSerializer.Serialize(body, typeof(ExpandoObject), PnPConstants.JsonSerializer_WriteIndentedFalse_CamelCase_JsonStringEnumConverter));
+            var apiCall = new ApiCall($"sites/{PnPContext.Uri.DnsSafeHost},{PnPContext.Site.Id},{PnPContext.Web.Id}/lists/{listId}/items/{Id}/createLink", ApiType.GraphBeta, jsonBody: JsonSerializer.Serialize(body, typeof(ExpandoObject), PnPConstants.JsonSerializer_WriteIndentedFalse_CamelCase_JsonStringEnumConverter));
             var response = await RawRequestAsync(apiCall, HttpMethod.Post).ConfigureAwait(false);
 
             if (response.StatusCode == HttpStatusCode.OK || response.StatusCode == HttpStatusCode.Created)
@@ -1581,7 +1670,7 @@ namespace PnP.Core.Model.SharePoint
             string itemApi = null;
             if (listItem.Parent is IListItemCollection)
             {
-                itemApi = "_api/web/lists/getbyid(guid'{Parent.Id}')/items({Id})";
+                itemApi = "_api/web/lists/getbyid(guid'{List.Id}')/items({Id})";
             }
             else if (listItem.Parent is IFile)
             {
@@ -1594,7 +1683,10 @@ namespace PnP.Core.Model.SharePoint
                 // Use the query client to translate the seletors into the needed query string
                 var tempComment = new Comment()
                 {
-                    PnPContext = context
+                    PnPContext = context,
+                    // Ensure the temp comment has a parent as otherwise token resolving can fail when the page
+                    // list item was not reloaded after comments were added                    
+                    Parent = (listItem as ListItem).Comments
                 };
 
                 var entityInfo = EntityManager.GetClassInfo(tempComment.GetType(), tempComment, expressions: selectors);
@@ -1657,7 +1749,9 @@ namespace PnP.Core.Model.SharePoint
                 throw new ArgumentNullException(PnPCoreResources.Exception_UserPrincipalNameEmpty);
             }
 
-            var apiCall = BuildGetUserEffectivePermissionsApiCall(userPrincipalName);
+            var listId = await GetListIdAsync().ConfigureAwait(false);
+
+            var apiCall = BuildGetUserEffectivePermissionsApiCall(userPrincipalName, listId);
 
             var response = await RawRequestAsync(apiCall, HttpMethod.Get).ConfigureAwait(false);
 
@@ -1669,11 +1763,9 @@ namespace PnP.Core.Model.SharePoint
             return EffectivePermissionsHandler.ParseGetUserEffectivePermissionsResponse(response.Json);
         }
 
-        private ApiCall BuildGetUserEffectivePermissionsApiCall(string userPrincipalName)
+        private ApiCall BuildGetUserEffectivePermissionsApiCall(string userPrincipalName, Guid parentListId)
         {
-            var parentList = Parent.Parent as List;
-
-            return new ApiCall($"_api/web/lists(guid'{parentList.Id}')/items({Id})/getusereffectivepermissions('{HttpUtility.UrlEncode("i:0#.f|membership|")}{userPrincipalName}')", ApiType.SPORest);
+            return new ApiCall($"_api/web/lists(guid'{parentListId}')/items({Id})/getusereffectivepermissions('{HttpUtility.UrlEncode("i:0#.f|membership|")}{userPrincipalName}')", ApiType.SPORest);
         }
 
         public bool CheckIfUserHasPermissions(string userPrincipalName, PermissionKind permissionKind)

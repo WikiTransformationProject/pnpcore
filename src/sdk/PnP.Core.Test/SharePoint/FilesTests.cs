@@ -254,6 +254,143 @@ namespace PnP.Core.Test.SharePoint
         }
         #endregion
 
+        #region GetFileById tests
+
+        [TestMethod]
+        public async Task GetFileByIdTest()
+        {
+            //TestCommon.Instance.Mocking = false;
+
+            try
+            {
+                (_, string documentName, string documentUrl) = await TestAssets.CreateTestDocumentAsync(0);
+
+                using (var context = await TestCommon.Instance.GetContextAsync(TestCommon.TestSite, 1))
+                {
+                    IFile testDocument = context.Web.GetFileByServerRelativeUrl(documentUrl);
+
+                    IFile testDocumentLoadedById = context.Web.GetFileById(testDocument.UniqueId);
+
+                    Assert.IsNotNull(testDocument.UniqueId == testDocumentLoadedById.UniqueId);
+                }
+            }
+            finally
+            {
+                await TestAssets.CleanupTestDocumentAsync(2);
+            }
+        }
+
+        [TestMethod]
+        public async Task GetFileByIdCurrentBatchTest()
+        {
+            //TestCommon.Instance.Mocking = false;
+
+            try
+            {
+                (_, string documentName, string documentUrl) = await TestAssets.CreateTestDocumentAsync(0);
+
+                using (var context = await TestCommon.Instance.GetContextAsync(TestCommon.TestSite, 1))
+                {
+                    IFile testDocument = context.Web.GetFileByServerRelativeUrlBatch(documentUrl);
+                    await context.ExecuteAsync();
+
+                    IFile testDocumentLoadedById = context.Web.GetFileByIdBatch(testDocument.UniqueId);
+                    await context.ExecuteAsync();
+
+                    Assert.IsNotNull(testDocument.UniqueId == testDocumentLoadedById.UniqueId);
+                }
+            }
+            finally
+            {
+                await TestAssets.CleanupTestDocumentAsync(2);
+            }
+        }
+
+        [TestMethod]
+        public async Task GetFileByIdBatchTest()
+        {
+            //TestCommon.Instance.Mocking = false;
+
+            try
+            {
+                (_, string documentName, string documentUrl) = await TestAssets.CreateTestDocumentAsync(0);
+
+                using (var context = await TestCommon.Instance.GetContextAsync(TestCommon.TestSite, 1))
+                {
+                    IFile testDocument = context.Web.GetFileByServerRelativeUrlBatch(documentUrl);
+                    await context.ExecuteAsync();
+
+                    var batch = context.NewBatch();
+                    IFile testDocumentLoadedById = context.Web.GetFileByIdBatch(batch, testDocument.UniqueId);
+                    await context.ExecuteAsync(batch);
+
+                    Assert.IsNotNull(testDocument.UniqueId == testDocumentLoadedById.UniqueId);
+                }
+            }
+            finally
+            {
+                await TestAssets.CleanupTestDocumentAsync(2);
+            }
+        }
+        #endregion
+
+        #region GetFileByLink tests
+
+        [TestMethod]
+        public async Task GetFileByLinkTest()
+        {
+            //TestCommon.Instance.Mocking = false;
+
+            try
+            {
+                (_, string documentName, string documentUrl) = await TestAssets.CreateTestDocumentAsync(0);
+
+                using (var context = await TestCommon.Instance.GetContextAsync(TestCommon.TestSite, 1))
+                {
+                    IFile testDocument = context.Web.GetFileByServerRelativeUrl(documentUrl);
+
+                    // Test regular link
+                    IFile testDocumentLoadedByLink = context.Web.GetFileByLink($"https://{context.Uri.DnsSafeHost}{documentUrl}");
+                    Assert.IsNotNull(testDocument.UniqueId == testDocumentLoadedByLink.UniqueId);
+
+                    // Test sharing link
+                    var link = testDocument.CreateOrganizationalSharingLink(new Model.Security.OrganizationalLinkOptions
+                    {
+                        Type = Model.Security.ShareType.View,
+                    });
+
+                    IFile testDocumentLoadedByLink2 = context.Web.GetFileByLink(link.Link.WebUrl);
+                    Assert.IsNotNull(testDocument.UniqueId == testDocumentLoadedByLink2.UniqueId);
+                }
+            }
+            finally
+            {
+                await TestAssets.CleanupTestDocumentAsync(2);
+            }
+        }
+
+        [TestMethod]
+        public async Task GetFileByLinkOtherSiteCollectionTest()
+        {
+            //TestCommon.Instance.Mocking = false;
+
+            using (var context = await TestCommon.Instance.GetContextAsync(TestCommon.TestSite, 1))
+            {
+                // Take the first list item
+                // For now hardcoded to https://bertonline.sharepoint.com/sites/prov-1/SiteAssets/donotdelete-sharingtest.mp4
+                // https://bertonline.sharepoint.com/:v:/s/prov-1/Ed2UMAoNf0tJhAjSJLt94wYBUd9U-ZhCKOoOXZcGS2dLBQ?e=KobeE5                    
+
+                // Test regular link
+                IFile testDocumentLoadedByLink = context.Web.GetFileByLink($"https://bertonline.sharepoint.com/sites/prov-1/SiteAssets/donotdelete-sharingtest.mp4");
+
+                // Test sharing link
+                IFile testDocumentLoadedByLink2 = context.Web.GetFileByLink("https://bertonline.sharepoint.com/:v:/s/prov-1/Ed2UMAoNf0tJhAjSJLt94wYBUd9U-ZhCKOoOXZcGS2dLBQ?e=KobeE5");
+                Assert.IsNotNull(testDocumentLoadedByLink.UniqueId == testDocumentLoadedByLink2.UniqueId);
+            }
+        }
+
+        #endregion
+
         #region Publish() variants
         // TODO: Review to cover 6 variants of each File methods with this set of tests as example
         [TestMethod]
@@ -1509,6 +1646,70 @@ namespace PnP.Core.Test.SharePoint
 
             await TestAssets.CleanupTestDocumentAsync(3);
             await TestAssets.CleanupTestDocumentAsync(3, contextConfig: TestCommon.NoGroupTestSite);
+        }
+
+        [TestMethod]
+        public async Task CopyFileCrossSiteNoOverWriteTest()
+        {
+            //TestCommon.Instance.Mocking = false;
+
+            (_, string documentName, string documentUrl) = await TestAssets.CreateTestDocumentAsync(0);
+
+            using (var context = await TestCommon.Instance.GetContextAsync(TestCommon.TestSite, 1))
+            {
+                using (var otherSiteContext = await TestCommon.Instance.GetContextAsync(TestCommon.NoGroupTestSite, 2))
+                {
+                    IFile testDocument = await context.Web.GetFileByServerRelativeUrlAsync(documentUrl);
+
+                    string destinationServerRelativeUrl = $"{otherSiteContext.Uri.PathAndQuery}/Shared Documents/{documentName}";
+                    
+                    // Perform first copy
+                    await testDocument.CopyToAsync(destinationServerRelativeUrl, options: new MoveCopyOptions { KeepBoth = true });
+
+                    // Perform second copy, this will not overwrite the original file but add a copy with a number suffix
+                    await testDocument.CopyToAsync(destinationServerRelativeUrl, options: new MoveCopyOptions { KeepBoth = true });
+
+                    IFile foundCopiedDocument = await otherSiteContext.Web.GetFileByServerRelativeUrlAsync(destinationServerRelativeUrl);
+                    Assert.IsNotNull(foundCopiedDocument);
+                    Assert.AreEqual(documentName, foundCopiedDocument.Name);
+                }
+            }
+
+            await TestAssets.CleanupTestDocumentAsync(3);
+            await TestAssets.CleanupTestDocumentAsync(3, contextConfig: TestCommon.NoGroupTestSite);
+            // Delete the extra file since we used keepboth twice
+            await TestAssets.CleanupTestDocumentAsync(3, contextConfig: TestCommon.NoGroupTestSite, fileName: $"{Path.GetFileNameWithoutExtension(documentName)}1.docx");
+        }
+
+        [TestMethod]
+        public async Task CopyFileNoOverWriteTest()
+        {
+            //TestCommon.Instance.Mocking = false;
+
+            (_, string documentName, string documentUrl) = await TestAssets.CreateTestDocumentAsync(0);
+
+            string originalFileNameWithoutExt = Path.GetFileNameWithoutExtension(documentName);
+            string copyFileName = $"{originalFileNameWithoutExt}_COPY{Path.GetExtension(documentName)}";
+            string destinationServerRelativeUrl = documentUrl.Replace(documentName, copyFileName);
+
+            using (var context = await TestCommon.Instance.GetContextAsync(TestCommon.TestSite, 1))
+            {
+                IFile testDocument = await context.Web.GetFileByServerRelativeUrlAsync(documentUrl);
+
+                // Perform first copy
+                await testDocument.CopyToAsync(destinationServerRelativeUrl, options: new MoveCopyOptions { KeepBoth = true });
+
+                // Perform second copy, this will not overwrite the original file but add a copy with a number suffix
+                await testDocument.CopyToAsync(destinationServerRelativeUrl, options: new MoveCopyOptions { KeepBoth = true });
+
+                IFile foundCopiedDocument = await context.Web.GetFileByServerRelativeUrlAsync(destinationServerRelativeUrl);
+                Assert.IsNotNull(foundCopiedDocument);
+                Assert.AreEqual(copyFileName, foundCopiedDocument.Name);
+            }
+
+            await TestAssets.CleanupTestDocumentAsync(2, fileName: documentName);
+            await TestAssets.CleanupTestDocumentAsync(2, fileName: copyFileName);
+            await TestAssets.CleanupTestDocumentAsync(2, fileName: $"{Path.GetFileNameWithoutExtension(copyFileName)}1.docx");
         }
 
         #endregion
@@ -3296,5 +3497,40 @@ namespace PnP.Core.Test.SharePoint
         }
 
         #endregion
+
+        [TestMethod]
+        public async Task RenameFileTest()
+        {
+            //TestCommon.Instance.Mocking = false;
+            using (var context = await TestCommon.Instance.GetContextAsync(TestCommon.TestSite))
+            {
+                IFile addedFile = null;
+                try
+                {
+                    IFolder parentFolder = await context.Web.Folders.FirstOrDefaultAsync(f => f.Name == "SiteAssets");
+
+                    string fileName = TestCommon.GetPnPSdkTestAssetName("test_added.docx");
+                    addedFile = await parentFolder.Files.AddAsync(fileName, System.IO.File.OpenRead($".{Path.DirectorySeparatorChar}TestAssets{Path.DirectorySeparatorChar}test.docx"));
+
+                    // Test the created object
+                    Assert.IsNotNull(addedFile);
+                    Assert.AreEqual(fileName, addedFile.Name);
+                    Assert.AreNotEqual(default, addedFile.UniqueId);
+
+                    // Rename file
+                    addedFile.Rename("rename.docx");
+
+                    // Get the file again
+                    IFile foundDocument = await context.Web.GetFileByServerRelativeUrlAsync($"{parentFolder.ServerRelativeUrl}/rename.docx");
+
+                    Assert.IsTrue(foundDocument != null);
+                }
+                finally
+                {
+                    // Cleanup the added file
+                    await addedFile.DeleteAsync();
+                }
+            }
+        }
     }
 }

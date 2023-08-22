@@ -6,6 +6,95 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/).
 
+## [1.10.0]
+
+### Added
+
+- Support for adding, removing and re-ordering list view columns #1144 [jansenbe - Bert Jansen]
+- Support for replacing the site collection admins #1184 [mloitzl - Martin Loitzl]
+- Support to delete list item versions (`IListItemVersion`) [jansenbe - Bert Jansen] 
+- Admin Library: Tenant hub site join method `GetSharePointAdmin().ConnectToHubSiteAsync` #1193 [jansenbe - Bert Jansen] 
+
+### Changed
+
+- Recognize editor component (CK4/CK5) being used in pages and allow developer to act on that `IPage.EditorType` [jansenbe - Bert Jansen]
+- Retain extra page settings (`isSpellCheckEnabled`, `globalRichTextStylingVersion`, `isEmailReady`, `rtePageSettings` and `htmlAttributes`) [jansenbe - Bert Jansen]
+- Fix to enable empty text parts to be added to a page #1164 [cnesmark - Christian Nesmark]
+- Use new syntax for inserting inline images when the page is using CK5 [jansenbe - Bert Jansen]
+- Fixed issue where section collapsibility is not set correctly when provisioning a page with a collapsible section containing a webpart. #1167 [mmi-wp - Mikkel Bukholt Mikkelsen]
+- IconAlignment cannot be used to infer collapsibility of a page section #1168 [mmi-wp - Mikkel Bukholt Mikkelsen]
+- Vertical sections should not be collapsible #1169 [mmi-wp - Mikkel Bukholt Mikkelsen]
+- Added `CreatedDateTime` property to `ITeamChannel` [jansenbe - Bert Jansen]
+- Support `DateTime` and `DateTimeOffset` types in OData filters #1173 [jansenbe - Bert Jansen]
+- AddAvailableContentTypeFromHubAsync throws Exception, even on success #1175 [jansenbe - Bert Jansen]
+- Correctly handle `ContentTypeHub` when the original context was created for the root site collection [jansenbe - Bert Jansen]
+- Fixed `FieldLink` handling when `ContentTypeHub` was used [jansenbe - Bert Jansen]
+- Fixed `AddTaxonomy` field methods when `ContentTypeHub` was used [jansenbe - Bert Jansen]
+- Handle the CSOM limitation of not being able to set an empty `RestrictedAccessControlGroups` property on `ISiteCollectionProperties.Update` [jansenbe - Bert Jansen]
+- Localized names for a TermSet can now be added #1188 [jansenbe - Bert Jansen]
+- Using `GetTermById` on `ITermStore` now loads the additional `ITerm` properties needed to enable operations on the loaded term #1189 [jansenbe - Bert Jansen]
+- GetCommentsAsync throws InvalidClientQueryException #1191 [jansenbe - Bert Jansen]
+- Ensure `CultureInfo.InvariantCulture` is used when translating dates to string #1201 [jansenbe - Bert Jansen]
+- Admin Library: do not return already approved permission requests #1202 [mloitzl - Martin Loitzl]
+- Ensure `TermStore.DefaultLanguage` is loaded before using it [jansenbe - Bert Jansen]
+- Fixed: Incorrect url for getting `IRoleAssignment` by principal id #1207 [JakeStanger - Jake Stanger]
+- Fixed: AddAvailableContentTypeFromHubAsync does not work on lists that are located in subsites - more broadly the 'site id' value used in Graph queries was not considering sub sites in multiple locations #1210 [jansenbe - Bert Jansen]
+- Fixed: Calling `UpdateOverwriteVersion` or `SystemUpdate` methods on `ListItemAllFields` when that was loaded from a `IFolder` resulted in error: "Guid should contain 32 digits with 4 dashes" #1213 [jansenbe - Bert Jansen]
+- Fixed updating multiple propertybag values doesn't work #1218 [jansenbe - Bert Jansen]
+
+## [1.9.0]
+
+### Added
+
+- Support for custom cloud environments by setting Environment to `Custom` followed by specifying the needed Graph and Azure AD endpoints #1014 [jansenbe - Bert Jansen]
+- Implements support for the access request configuration #1040 [plamber - Patrick Lamber]
+- Option to specify the `X509Certificate2` when using the `OnBehalfOfAuthenticationProvider`, similar to the support there is for this in the `X509CertificateAuthenticationProvider` #1047 [mloitzl - Martin Loitzl]
+- Option to get a file by unique id using the `GetFileById` methods on `IWeb` [jansenbe - Bert Jansen]
+- Option to get a file by link (any fully qualified link to a file, including sharing links) using the `GetFileByLink` methods on `IWeb` #1054 [jansenbe - Bert Jansen]
+- Configure whether the web templates dialog shows up or not via the `WebTemplatesGalleryFirstRunEnabled` property on `IWeb` #1057 [jansenbe - Bert Jansen]
+- Added `EnableAudienceTargeting` methods on `IList` [jansenbe - Bert Jansen]
+- Added support for adding, updating and removing audiences on navigation nodes #1065 [jansenbe - Bert Jansen]
+- Admin library: added 43 new properties to `ITenantProperties` [jansenbe - Bert Jansen]
+- Admin library: added 15 new properties to `ISiteCollectionProperties` [jansenbe - Bert Jansen]
+- Bulk user validation method `ValidateUsersAsync` and `ValidateAndEnsureUsersAsync` on `IWeb` [jansenbe - Bert Jansen]
+- When using the `GetSiteCollectionsWithDetailsAsync` method you now can choose to also return the site collections linked to private and shared Teams channels #1076 [jansenbe - Bert Jansen]
+- Fix URL encoding for use in SPO REST ...Path methods (e.g. `getFolderByServerRelativePath`) #1077 [jansenbe - Bert Jansen]
+- Added `Rename` methods on `IFolder` to make it easier to rename a folder #1080 [jansenbe - Bert Jansen]
+- Support for reading and cloning News Digest pages #1086 [jansenbe - Bert Jansen]
+- Add capabilities to grant or revoke permissions to existing sharing link #1094 [MathijsVerbeeck - Mathijs Verbeeck]
+- Support for listing, approving and denying api access requests after installing an app #1100 [mloitzl - Martin Loitzl]
+- Added `Rename` methods on `IFile` to make it easier to rename a file #1109 [jansenbe - Bert Jansen]
+- Added feature to enable or disable the SharePoint service principal #1117 [mloitzl - Martin Loitzl]
+- Method to ensure the 'Everyone except external users' user for any site language #1127 [plamber - Patrick Lamber] 
+- Added support for listing, adding and revoking permission grants for a SharePoint service principal #1132 [mloitzl - Martin Loitzl]
+- Admin library: added support for listing Azure ACS principals and SharePoint AddIns [jansenbe - Bert Jansen]
+- Support for moving a ListItem to a sub folder #1146 [mloitzl - Martin Loitzl]
+
+### Changed
+
+- Lookup, Url and User fields were not loaded for list item versions #1031 [jansenbe - Bert Jansen]
+- Fix issue when loading freshly added page comments without reloading the actual page [jansenbe - Bert Jansen]
+- Fix modern team site creation when no valid description was passed in #1037 [LeHailender - Jens Haile]
+- Fix for adding site collection term group #1041 [jansenbe - Bert Jansen]
+- The JSON controldata sectionindex value of page could not be converted to System.Int32 : Handle Pnp Provisioning template extraction failure from Project Management site template #1058 [stokuri - Suman Tokori]
+- Improve code consistency for the eventhub model [jansenbe - Bert Jansen]
+- Added `DefaultViewUrl` property for `IList` [jansenbe - Bert Jansen]
+- Added more values for `ListTemplateType` [jansenbe - Bert Jansen]
+- Added `UserCustomActions` to `IList` [jansenbe - Bert Jansen]
+- Fixed enum order for `ListExperience` [jansenbe - Bert Jansen]
+- Extended the `IPnPContext` interface to contain all the public method and properties to better support mocking in unit tests #1083 [jansenbe - Bert Jansen]
+- Fix SiteCollectionManager.GetSiteCollectionWithDetailsAsync returning null when getting root site collection #1089 [jansenbe - Bert Jansen]
+- Removed `BlockDownloadFileTypeIds` and `ExcludedBlockDownloadGroupIds` properties from Tenant properties as they could not be saved preventing other property updates #1087 [jansenbe - Bert Jansen]
+- Added the `RetainEditorAndModifiedOnMove` property to the `MoveCopyOptions` and optimized file copy/move operations to use the cross site API as much as possible #989 #1091 [jansenbe - Bert Jansen]
+- Dropped .NET 5 support as it's not supported anymore [jansenbe - Bert Jansen]
+- Fix for IFile/IListItem - CheckIfUserHasPermissionsAsync Throws ->System.NullReferenceException: #1097 [jansenbe - Bert Jansen]
+- Improved model for `PnPContext` extensions allowing them to be used by mocking frameworks in unit tests #1083 [plamber - Patrick Lamber]
+- Chars ' and . are allowed in alias and urls [jansenbe - Bert Jansen]
+- Add possibility to get the `IServicePrincipal` via `IAppManager` #1116 [mloitzl - Martin Loitzl]
+- Don't set `BaseAddress` of `MicrosoftGraphClient` when there's no change #1114 [jansenbe - Bert Jansen]
+- Option to create private/shared Teams channels #1126 [JakeStanger - Jake Stanger]
+- Bump Nuget package version dependencies to align with PnP PS needs [jansenbe - Bert Jansen]
+
 ## [1.8.0]
 
 ### Added

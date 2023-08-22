@@ -55,7 +55,7 @@ namespace PnP.Core.Admin.Model.SharePoint
                 // Provide default creation options as input
                 creationOptions = await EnsureCreationOptionsAsync(context, creationOptions).ConfigureAwait(false);
 
-                // If we're using application permissions we use Microsoft Graph to create the site
+                // SharePoint does not support group connecting via application permissions
                 if (creationOptions.UsingApplicationPermissions.Value)
                 {
                     throw new NotSupportedException("Group connecting sites using application permissions is not supported");
@@ -99,7 +99,13 @@ namespace PnP.Core.Admin.Model.SharePoint
 
                     if (siteToGroupify.Owners != null && siteToGroupify.Owners.Length > 0)
                     {
-                        optionalParams.Add("Owners", siteToGroupify.Owners);
+                        var ownersBody = new
+                        {
+                            __metadata = new { type = "Collection(Edm.String)" },
+                            results = siteToGroupify.Owners
+                        }.AsExpando();
+
+                        optionalParams.Add("Owners", ownersBody);
                     }
                     if (siteToGroupify.PreferredDataLocation.HasValue)
                     {
@@ -148,7 +154,7 @@ namespace PnP.Core.Admin.Model.SharePoint
 
             if (string.IsNullOrEmpty(siteToCreate.Owner) && creationOptions.UsingApplicationPermissions.Value)
             {
-                throw new ClientException(ErrorType.Unsupported, "You need to set an owner when using Application permissions to create a communicaiton site");
+                throw new ClientException(ErrorType.Unsupported, "You need to set an owner when using Application permissions to create a communication site");
             }
 
             var payload = BuildBaseCommonNoGroupSiteRequestPayload(siteToCreate);
@@ -187,7 +193,6 @@ namespace PnP.Core.Admin.Model.SharePoint
                 var newGroup = new GraphGroupOptions
                 {
                     DisplayName = siteToCreate.DisplayName,
-                    Description = string.IsNullOrEmpty(siteToCreate.Description) ? string.Empty : siteToCreate.Description,
                     MailNickname = siteToCreate.Alias,
                     MailEnabled = true,
                     Visibility = siteToCreate.IsPublic ? GroupVisibility.Public.ToString() : GroupVisibility.Private.ToString(),
@@ -197,7 +202,12 @@ namespace PnP.Core.Admin.Model.SharePoint
                     ResourceBehaviorOptions = new List<string>()
                 };
 
-                if(siteToCreate.AllowOnlyMembersToPost.GetValueOrDefault(false))
+                if (!string.IsNullOrEmpty(siteToCreate.Description))
+                {
+                    newGroup.Description = siteToCreate.Description;
+                }
+                
+                if (siteToCreate.AllowOnlyMembersToPost.GetValueOrDefault(false))
                 {
                     newGroup.ResourceBehaviorOptions.Add("AllowOnlyMembersToPost");
                 }
