@@ -70,7 +70,7 @@ namespace PnP.Core.Model.SharePoint
                 string requestUrl = PnPContext.Uri.ToString();
                 if (IsContentTypeHub())
                 {
-                    requestUrl = requestUrl.Replace(PnPContext.Uri.AbsolutePath, PnPConstants.ContentTypeHubUrl);
+                    requestUrl = ContentTypeHub.SwitchToContentTypeHubUrl(PnPContext.Uri, requestUrl);
                 }
 
                 return new ApiCall(new List<IRequest<object>>() { request })
@@ -85,7 +85,7 @@ namespace PnP.Core.Model.SharePoint
 #pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
                 if (IsContentTypeHub())
                 {
-                    var request = api.ApiCall.Request.Replace(PnPContext.Uri.AbsolutePath, PnPConstants.ContentTypeHubUrl);
+                    var request = ContentTypeHub.SwitchToContentTypeHubUrl(PnPContext.Uri, api.ApiCall.Request);
                     api.ApiCall = new ApiCall(request, api.ApiCall.Type, api.ApiCall.JsonBody, api.ApiCall.ReceivingProperty);
                 }
 
@@ -99,7 +99,7 @@ namespace PnP.Core.Model.SharePoint
 #pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
                 if (IsContentTypeHub())
                 {
-                    var request = api.ApiCall.Request.Replace(PnPContext.Uri.AbsolutePath, PnPConstants.ContentTypeHubUrl);
+                    var request = ContentTypeHub.SwitchToContentTypeHubUrl(PnPContext.Uri, api.ApiCall.Request);
                     api.ApiCall = new ApiCall(request, api.ApiCall.Type, api.ApiCall.JsonBody, api.ApiCall.ReceivingProperty);
                 }
                 return api;
@@ -112,7 +112,7 @@ namespace PnP.Core.Model.SharePoint
 #pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
                 if (IsContentTypeHub())
                 {
-                    var request = api.ApiCall.Request.Replace(PnPContext.Uri.AbsolutePath, PnPConstants.ContentTypeHubUrl);
+                    var request = ContentTypeHub.SwitchToContentTypeHubUrl(PnPContext.Uri, api.ApiCall.Request);
                     api.ApiCall = new ApiCall(request, api.ApiCall.Type, api.ApiCall.JsonBody, api.ApiCall.ReceivingProperty);
                 }
                 return api;
@@ -488,13 +488,14 @@ namespace PnP.Core.Model.SharePoint
             // automatically provide the correct 'parent'
             if (EntityManager.GetClassInfo(GetType(), this).SharePointTarget == typeof(Web))
             {
+                // Content types are typically maintained at site collection level
                 return new ApiCall($"/sites/{PnPContext.Site.Id}/contentTypes/addCopyFromContentTypeHub", ApiType.Graph, bodyContent);
             }
             else if (EntityManager.GetClassInfo(GetType(), this).SharePointTarget == typeof(List))
             {
                 Guid listId = GetListIdFromParent(this);
 
-                return new ApiCall($"/sites/{PnPContext.Site.Id}/lists/{listId}/contentTypes/addCopyFromContentTypeHub", ApiType.Graph, bodyContent);
+                return new ApiCall($"/sites/{PnPContext.Uri.DnsSafeHost},{PnPContext.Site.Id},{PnPContext.Web.Id}/lists/{listId}/contentTypes/addCopyFromContentTypeHub", ApiType.Graph, bodyContent);
             }
 
             throw new ClientException(ErrorType.Unsupported, "You can only add content types from the content type hub to sites and lists");
@@ -518,14 +519,15 @@ namespace PnP.Core.Model.SharePoint
                 if (options.WaitForCompletion)
                 {
                     await operation.WaitForCompletionAsync(options.LongRunningOperationOptions).ConfigureAwait(false);
+                    return null;
                 }
                 else
                 {
                     return operation;
                 }
             }
-
-            throw new MicrosoftGraphServiceException(ErrorType.GraphServiceError, (int)response.StatusCode, response.Json);
+           
+            throw new MicrosoftGraphServiceException(ErrorType.GraphServiceError, (int)response.StatusCode, response.Json);           
         }
 
         private static AddContentTypeFromHubOptions EnsureAddContentTypeFromHubOptions(AddContentTypeFromHubOptions options)
@@ -656,7 +658,7 @@ namespace PnP.Core.Model.SharePoint
 
         internal async Task<string> GetSiteIdAsync()
         {
-            var siteId = PnPContext.Site.Id.ToString();
+            var siteId = $"{PnPContext.Site.Id}";
 
             if (IsContentTypeHub())
             {

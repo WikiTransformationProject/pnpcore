@@ -151,6 +151,83 @@ await appManager.RemoveAsync(app.Id);
 await app.RemoveAsync();
 ```
 
+## List, approve or reject the permissions requests for an app
+
+Some apps can request permissions to call additional APIs by adding a `webApiPermissionRequests` element in their `package-solution.json` file. Below snippet shows a part of such a file:
+
+```json
+{
+    "solution": {
+    "name": "apicalltest-client-side-solution",
+    "id": "da4e941c-a64e-401a-b63d-664e5bf62bdc",
+    "version": "1.0.0.0",
+    "includeClientSideAssets": true,
+    "skipFeatureDeployment": true,
+    "isDomainIsolated": false,
+    "webApiPermissionRequests": [
+      {
+        "resource": "Microsoft Graph",
+        "scope": "Calendars.Read"
+      },
+      {
+        "resource": "Microsoft Graph",
+        "scope": "User.ReadBasic.All"
+      }
+    ]
+}
+```
+
+After adding and deploying an app to the app catalog these API permissions need to be approved by an admin (e.g. via https://contoso-admin.sharepoint.com/_layouts/15/online/AdminHome.aspx#/webApiPermissionManagement) or via code. The code approach can be implemented using the `IServicePrincipal` class and the `GetPermissionRequests`, `ApprovePermissionRequest` and `DenyPermissionRequest` methods:
+
+```csharp
+// List the permission requests that are pending approval or rejection
+var appManager = context.GetTenantAppManager();
+List<IPermissionRequest> permissionRequests = await appManager.ServicePrincipal.GetPermissionRequestsAsync();
+
+// Approve a permission request
+var result = await appManager.ServicePrincipal.ApprovePermissionRequestAsync(permissionRequests.First().Id.ToString());
+
+// Deny a permission request
+await appManager.ServicePrincipal.DenyPermissionRequestAsync(permissionRequests.First().Id.ToString());
+```
+
+## Add, list and revoke permission grants of the SharePoint app service principal
+
+Permission grants can be added and revoked to/from the SharePoint app service principal via code.
+
+```csharp
+// Add a grant to the ServicePrincipal
+var appManager = context.GetTenantAppManager();
+IPermissionGrant addResult = appManager.ServicePrincipal
+      .AddGrant("Microsoft Graph", "Calendars.ReadWrite.Shared");
+
+// Revoke a grant from the ServicePrincipal
+var appManager = context.GetTenantAppManager();
+IPermissionGrant revokeResult = appManager.ServicePrincipal.RevokeGrant(addResult.ObjectId);
+```
+
+Permissions granted to the the SharePoint app service principal can be listed via code.
+
+```csharp
+// List grants from the ServicePrincipal
+var appManager = context.GetTenantAppManager();
+IEnumerable<IPermissionGrant> result = appManager.ServicePrincipal.ListGrants();
+```
+
+## Enable or disable the SharePoint app service principal
+
+The SharePoint app service principal can be enabled or disabled using the Azure Active Directory portal or via code. The `Enable` and `Disable` operations can be found on the `IServicePrincipal` interface:
+
+```csharp
+// Enable the ServicePrincipal
+var appManager = context.GetTenantAppManager();
+IServicePrincipalProperties result = await appManager.ServicePrincipal.Enable();
+
+// Disable the ServicePrincipal
+var appManager = context.GetTenantAppManager();
+IServicePrincipalProperties result = await appManager.ServicePrincipal.Disable();
+```
+
 ## Tenant app catalog specific operations
 
 Some methods are available only for the tenant app catalog. They are listed below.

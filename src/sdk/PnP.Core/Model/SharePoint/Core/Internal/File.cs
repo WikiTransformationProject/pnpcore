@@ -3,6 +3,7 @@ using PnP.Core.Services;
 using System;
 using System.Collections.Generic;
 using System.Dynamic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -188,7 +189,7 @@ namespace PnP.Core.Model.SharePoint
 
             if (anonymousLinkOptions.ExpirationDateTime != DateTime.MinValue)
             {
-                body.expirationDateTime = anonymousLinkOptions.ExpirationDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ");
+                body.expirationDateTime = anonymousLinkOptions.ExpirationDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
             }
 
             return await CreateSharingLinkAsync(body).ConfigureAwait(false);
@@ -265,7 +266,7 @@ namespace PnP.Core.Model.SharePoint
 
             if (inviteOptions.ExpirationDateTime != DateTime.MinValue)
             {
-                body.expirationDateTime = inviteOptions.ExpirationDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ");
+                body.expirationDateTime = inviteOptions.ExpirationDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
             }
 
             var apiCall = new ApiCall($"sites/{SiteId}/drives/{VroomDriveID}/items/{VroomItemID}/invite", ApiType.GraphBeta, jsonBody: JsonSerializer.Serialize(body, typeof(ExpandoObject), PnPConstants.JsonSerializer_IgnoreNullValues_CamelCase));
@@ -681,16 +682,6 @@ namespace PnP.Core.Model.SharePoint
         #endregion
 
         #region CopyTo
-        private ApiCall GetCopyToSameSiteApiCall(string destinationUrl, bool overwrite)
-        {
-            var entityInfo = EntityManager.GetClassInfo(GetType(), this);
-            // NOTE WebUtility encode spaces to "+" instead of %20
-            string encodedDestinationUrl = WebUtility.UrlEncode(destinationUrl).Replace("+", "%20").Replace("/", "%2F");
-            string copyToEndpointUrl = $"{entityInfo.SharePointUri}/copyTo(strnewurl='{encodedDestinationUrl}', boverwrite={overwrite.ToString().ToLower()})";
-
-            return new ApiCall(copyToEndpointUrl, ApiType.SPORest);
-        }
-
         private ApiCall GetCopyToCrossSiteApiCall(string destinationUrl, bool overwrite, MoveCopyOptions options)
         {
             string destUrl = UrlUtility.EnsureAbsoluteUrl(PnPContext.Uri, destinationUrl).ToString();
@@ -717,6 +708,7 @@ namespace PnP.Core.Model.SharePoint
                     __metadata = new { type = "SP.MoveCopyOptions" },
                     options.KeepBoth,
                     options.ResetAuthorAndCreatedOnCopy,
+                    options.RetainEditorAndModifiedOnMove,
                     options.ShouldBypassSharedLocks
                 }
             }.AsExpando();
@@ -728,16 +720,8 @@ namespace PnP.Core.Model.SharePoint
 
         private ApiCall GetCopyToApiCall(string destinationUrl, bool overwrite, MoveCopyOptions options)
         {
-            // If same site
-            if (UrlUtility.IsSameSite(PnPContext.Uri, destinationUrl))
-            {
-                return GetCopyToSameSiteApiCall(destinationUrl, overwrite);
-            }
-            else
-            {
-                options ??= new MoveCopyOptions() { KeepBoth = !overwrite };
-                return GetCopyToCrossSiteApiCall(destinationUrl, overwrite, options);
-            }
+            options ??= new MoveCopyOptions() { KeepBoth = !overwrite };
+            return GetCopyToCrossSiteApiCall(destinationUrl, overwrite, options);
         }
 
         public async Task CopyToAsync(string destinationUrl, bool overwrite = false, MoveCopyOptions options = null)
@@ -810,6 +794,7 @@ namespace PnP.Core.Model.SharePoint
                     __metadata = new { type = "SP.MoveCopyOptions" },
                     options.KeepBoth,
                     options.ResetAuthorAndCreatedOnCopy,
+                    options.RetainEditorAndModifiedOnMove,
                     options.ShouldBypassSharedLocks
                 }
             }.AsExpando();
@@ -821,15 +806,26 @@ namespace PnP.Core.Model.SharePoint
 
         private ApiCall GetMoveToApiCall(string destinationUrl, MoveOperations moveOperations, MoveCopyOptions options)
         {
-            // If same site
-            if (UrlUtility.IsSameSite(PnPContext.Uri, destinationUrl))
+            // If same site and using move options that are not available via the more universal move method
+            if (UrlUtility.IsSameSite(PnPContext.Uri, destinationUrl) && 
+                // These operations cannnot be performed using the cross site move API call, hence we're falling back to the API call that only 
+                // works inside the same site
+               (moveOperations.HasFlag(MoveOperations.AllowBrokenThickets) || moveOperations.HasFlag(MoveOperations.BypassApprovePermission)))
             {
                 return GetMoveToSameSiteApiCall(destinationUrl, moveOperations);
             }
             else
             {
                 bool overwrite = moveOperations.HasFlag(MoveOperations.Overwrite);
-                options ??= new MoveCopyOptions() { KeepBoth = !overwrite };
+                bool retainEditorAndModifiedOnMove = moveOperations.HasFlag(MoveOperations.RetainEditorAndModifiedOnMove);
+                bool shouldByPassSharedLocks = moveOperations.HasFlag(MoveOperations.BypassSharedLock);
+
+                options ??= new MoveCopyOptions()
+                {
+                    KeepBoth = !overwrite,
+                    RetainEditorAndModifiedOnMove = retainEditorAndModifiedOnMove,
+                    ShouldBypassSharedLocks = shouldByPassSharedLocks
+                };
                 return GetMoveToCrossSiteApiCall(destinationUrl, overwrite, options);
             }
         }
@@ -1017,7 +1013,7 @@ namespace PnP.Core.Model.SharePoint
                 jpgOptions = $"&width={options.JpgFormatWidth}&height={options.JpgFormatHeight}";
             }
 
-            var convertEndpointUrl = $"sites/{PnPContext.Site.Id}/drives/{VroomDriveID}/items/{VroomItemID}/content?format={options.Format.ToString().ToLowerInvariant()}{jpgOptions}";
+            var convertEndpointUrl = $"sites/{PnPContext.Uri.DnsSafeHost},{PnPContext.Site.Id},{PnPContext.Web.Id}/drives/{VroomDriveID}/items/{VroomItemID}/content?format={options.Format.ToString().ToLowerInvariant()}{jpgOptions}";
 
             ApiType typeToUse = ApiType.GraphBeta;
             if (options.Format == ConvertToFormat.Pdf)
@@ -1094,7 +1090,7 @@ namespace PnP.Core.Model.SharePoint
                 body.zoom = options.Zoom;
             }
 
-            var apiCall = new ApiCall($"sites/{PnPContext.Site.Id}/drives/{VroomDriveID}/items/{VroomItemID}/preview", ApiType.Graph, jsonBody: JsonSerializer.Serialize(body, typeof(ExpandoObject), PnPConstants.JsonSerializer_IgnoreNullValues_CamelCase));
+            var apiCall = new ApiCall($"sites/{PnPContext.Uri.DnsSafeHost},{PnPContext.Site.Id},{PnPContext.Web.Id}/drives/{VroomDriveID}/items/{VroomItemID}/preview", ApiType.Graph, jsonBody: JsonSerializer.Serialize(body, typeof(ExpandoObject), PnPConstants.JsonSerializer_IgnoreNullValues_CamelCase));
 
             var response = await RawRequestAsync(apiCall, HttpMethod.Post).ConfigureAwait(false);
 
@@ -1135,6 +1131,28 @@ namespace PnP.Core.Model.SharePoint
             return filePreview;
         }
 
+        #endregion
+
+        #region Rename File
+        public async Task RenameAsync(string name)
+        {
+            await EnsurePropertiesAsync(y => y.VroomItemID, y => y.VroomDriveID).ConfigureAwait(false);
+
+            dynamic body = new
+            {
+                name
+            };
+
+            var apiCall = new ApiCall($"sites/{PnPContext.Uri.DnsSafeHost},{PnPContext.Site.Id},{PnPContext.Web.Id}/drives/{VroomDriveID}/items/{VroomItemID}", ApiType.Graph, JsonSerializer.Serialize(body, PnPConstants.JsonSerializer_IgnoreNullValues));
+            await RequestAsync(apiCall, new HttpMethod("PATCH")).ConfigureAwait(false);
+            // Update the Name property without marking the file as changed
+            SetSystemValue(name, nameof(Name));
+        }
+
+        public void Rename(string name)
+        {
+            RenameAsync(name).GetAwaiter().GetResult();
+        }
         #endregion
 
         #endregion
