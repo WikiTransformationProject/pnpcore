@@ -207,8 +207,8 @@ namespace PnP.Core.Model.SharePoint
                             {
                                 var file = itemToUpdate.File;
                                 file.SetSystemProperty(p => p.UniqueId, Guid.Parse(uniqueId.ToString()));
-                                (file as IMetadataExtensible).Metadata.Add(PnPConstants.MetaDataRestId, uniqueId.ToString());
-                                (file as IMetadataExtensible).Metadata.Add(PnPConstants.MetaDataType, "SP.File");
+                                (file as IMetadataExtensible).Metadata[PnPConstants.MetaDataRestId] = uniqueId.ToString();
+                                (file as IMetadataExtensible).Metadata[PnPConstants.MetaDataType] = "SP.File";
                                 (file as File).Requested = true;
                             }
                         }
@@ -226,8 +226,8 @@ namespace PnP.Core.Model.SharePoint
                             ct.SetSystemProperty(p => p.Id, contentTypeId.GetString());
                             ct.SetSystemProperty(p => p.StringId, contentTypeId.GetString());
                             ct.SetSystemProperty(p => p.Name, contentTypeName.GetString());
-                            (ct as IMetadataExtensible).Metadata.Add(PnPConstants.MetaDataRestId, contentTypeId.GetString());
-                            (ct as IMetadataExtensible).Metadata.Add(PnPConstants.MetaDataType, "SP.ContentType");
+                            (ct as IMetadataExtensible).Metadata[PnPConstants.MetaDataRestId] = contentTypeId.GetString();
+                            (ct as IMetadataExtensible).Metadata[PnPConstants.MetaDataType] = "SP.ContentType";
                             (ct as ContentType).Requested = true;
                         }
 

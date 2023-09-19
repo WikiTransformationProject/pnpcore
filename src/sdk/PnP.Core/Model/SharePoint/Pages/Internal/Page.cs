@@ -472,8 +472,20 @@ namespace PnP.Core.Model.SharePoint
             return new Page(context, pagesLibrary, null, pageLayoutType);
         }
 
+        // EnsurePagesLibraryAsync cannot detect already retrieved pages libs, leading to the pages lib being requested over and over again
+        // So, simple solution: cache per PnPContext...
+        // HEU ==============================================================================
+        private static new Dictionary<PnPContext, IList>  previousPagesLibraryResultsHeu = new();
+        // ==================================================================================
         private static async Task<IList> EnsurePagesLibraryAsync(PnPContext context)
         {
+            // HEU ==============================================================================
+            if (previousPagesLibraryResultsHeu.TryGetValue(context, out var cachedList))
+            { 
+                return cachedList;
+            }
+            // ==================================================================================
+
             IList pagesLibrary = null;
             var lists = context.Web.Lists.AsRequested();
             if (context.Web.IsPropertyAvailable(p => p.Lists) && lists.Any())
@@ -504,6 +516,7 @@ namespace PnP.Core.Model.SharePoint
                                                        .ConfigureAwait(false);
                 if (libraries.Count == 1)
                 {
+                    previousPagesLibraryResultsHeu[context] = libraries.First();
                     return libraries.First();
                 }
                 else
@@ -519,6 +532,7 @@ namespace PnP.Core.Model.SharePoint
                 }
             }
 
+            previousPagesLibraryResultsHeu[context] = pagesLibrary;
             return pagesLibrary;
         }
 
