@@ -8,6 +8,7 @@ using System.Net.Http;
 using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
+using WikiTraccs.Shared.Http;
 
 namespace PnP.Core.Services
 {
@@ -70,6 +71,7 @@ namespace PnP.Core.Services
                     {
                         await rateLimiter.WaitAsync(cancellationToken).ConfigureAwait(false);
                     }
+                    await AwaitableGate.Instance.WaitAsync(cancellationToken).ConfigureAwait(false);
 
                     response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
@@ -172,7 +174,9 @@ namespace PnP.Core.Services
                 AddOrUpdateRetryAttempt(request, retryCount);
 
                 // Delay time
-                await delay.ConfigureAwait(false);
+                AwaitableGate.Instance.SetWaitTime((int)delayTimeSpan.TotalMilliseconds);
+                await AwaitableGate.Instance.WaitAsync().ConfigureAwait(false);
+//                await delay.ConfigureAwait(false);
             }
         }
 
