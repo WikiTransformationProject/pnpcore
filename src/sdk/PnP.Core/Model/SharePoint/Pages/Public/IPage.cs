@@ -437,6 +437,13 @@ namespace PnP.Core.Model.SharePoint
         DefaultWebPart WebPartIdToDefaultWebPart(string id);
 
         /// <summary>
+        /// Translated a given web part id to a <see cref="DefaultWebPart"/> enum. Non default web parts will be returned as <see cref="DefaultWebPart.ThirdParty"/>
+        /// </summary>
+        /// <param name="id">Web part id to lookup</param>
+        /// <returns>Corresponding <see cref="DefaultWebPart"/> enum value</returns>
+        static DefaultWebPart IdToDefaultWebPart(string id) => Page.IdToDefaultWebPart(id);
+
+        /// <summary>
         /// Translates a given <see cref="DefaultWebPart"/> enum to it's corresponding web part id. Non default web parts will be returned as empty string
         /// </summary>
         /// <param name="webPart"><see cref="DefaultWebPart"/> enum to translate to it's id</param>
