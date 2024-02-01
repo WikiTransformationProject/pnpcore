@@ -1,4 +1,5 @@
-﻿using System;
+﻿using AngleSharp.Dom;
+using System;
 
 namespace PnP.Core.Model.SharePoint
 {
@@ -119,5 +120,17 @@ namespace PnP.Core.Model.SharePoint
         /// </summary>
         /// <param name="position">New position for this control</param>
         void MovePosition(int position);
+
+        /// <summary>
+        /// Converts this <see cref="PageText"/> control to it's html representation
+        /// </summary>
+        /// <param name="controlIndex">The sequence of the control inside the section</param>
+        /// <returns>Html representation of this <see cref="PageText"/> control</returns>
+        string ToHtml(float controlIndex);
+        /// <summary>
+        /// Populates this <see cref="PageText"/> control from its HTML representation
+        /// </summary>
+        /// <param name="element">The HTML representation to populate from</param>
+        void FromHtml(IElement element);
     }
 }
