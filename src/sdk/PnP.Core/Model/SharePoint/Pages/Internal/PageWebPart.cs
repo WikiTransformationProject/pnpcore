@@ -515,7 +515,7 @@ namespace PnP.Core.Model.SharePoint
         #endregion
 
         #region Internal and private methods
-        internal override void FromHtml(IElement element)
+        public override void FromHtml(IElement element)
         {
             base.FromHtml(element);
 
