@@ -15,7 +15,7 @@ using System.Threading.Tasks;
 
 namespace PnP.Core.Model.SharePoint
 {
-    internal sealed class Page : IPage
+    public sealed class Page : IPage
     {
         private const string inlineImageCK4Html = "<div tabindex=\"-1\" data-cke-widget-wrapper=\"1\" data-cke-filter=\"off\" class=\"cke_widget_wrapper cke_widget_block cke_widget_inlineimage cke_widget_wrapper_webPartInRteInlineImage cke_widget_wrapper_{ImageAlignment} cke_widget_wrapper_webPartInRte\" data-cke-display-name=\"div\" data-cke-widget-id=\"0\" role=\"region\" aria-label=\"Inline image in RTE. Use Alt + F11 to go to toolbar. Use Alt + P to open the property pane.\"><div data-webpart-id=\"image\" class=\"webPartInRte {ImageAlignment} webPartInRteInlineImage cke_widget_element\" data-cke-widget-data=\"%7B%22classes%22%3A%7B%22webPartInRteInlineImage%22%3A1%2C%22{ImageAlignment}%22%3A1%2C%22webPartInRte%22%3A1%7D%7D\" data-cke-widget-upcasted=\"1\" data-cke-widget-keep-attr=\"0\" data-widget=\"inlineimage\" data-instance-id=\"{TextEditorInstanceId}\" title=\"\"></div></div>";
         private const string inlineImageCK5Html = "<div class=\"imagePlugin\" style=\"background-color:transparent;position:relative;\" data-alignment=\"{ImageAlignment}\" data-imageurl=\"{ImageUrl}\" data-uploading=\"0\" data-height=\"{ImageHeight}\" data-width=\"{ImageWidth}\" data-widthpercentage=\"{WidthPercentage}\" data-captiontext=\"{ImageCaption}\" data-alttext=\"{ImageAlternativeText}\" data-linkurl=\"{ImageLinkUrl}\"></div>";
@@ -1024,7 +1024,7 @@ namespace PnP.Core.Model.SharePoint
         #region From Html        
 
 #pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
-        internal async static Task<Page> LoadPageAsync(IList pagesLibrary, IListItem item)
+        public async static Task<Page> LoadPageAsync(IList pagesLibrary, IListItem item)
 #pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
         {
             if (item.Values.ContainsKey(PageConstants.ClientSideApplicationId) && item.Values[PageConstants.ClientSideApplicationId] != null && item.Values[PageConstants.ClientSideApplicationId].ToString().Equals(PageConstants.SitePagesFeatureId, StringComparison.InvariantCultureIgnoreCase))

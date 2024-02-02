@@ -1,71 +1,71 @@
 ﻿namespace PnP.Core.Model.SharePoint
 {
-    internal static class PageConstants
+    public static class PageConstants
     {
         #region Constants
         // fields
-        internal const string BannerImageUrlField = "BannerImageUrl";
-        internal const string CanvasField = "CanvasContent1";
-        internal const string PageLayoutContentField = "LayoutWebpartsContent";
-        internal const string PageLayoutType = "PageLayoutType";
-        internal const string ApprovalStatus = "_ModerationStatus";
-        internal const string ContentTypeId = "ContentTypeId";
-        internal const string Title = "Title";
-        internal const string ClientSideApplicationId = "ClientSideApplicationId";
-        internal const string PromotedStateField = "PromotedState";
-        internal const string FirstPublishedDate = "FirstPublishedDate";
-        internal const string FileLeafRef = "FileLeafRef";
-        internal const string FileType = "File_x0020_Type";
-        internal const string FileDirRef = "FileDirRef";
-        internal const string DescriptionField = "Description";
-        internal const string _AuthorByline = "_AuthorByline";
-        internal const string _TopicHeader = "_TopicHeader";
-        internal const string _OriginalSourceUrl = "_OriginalSourceUrl";
-        internal const string _OriginalSourceSiteId = "_OriginalSourceSiteId";
-        internal const string _OriginalSourceWebId = "_OriginalSourceWebId";
-        internal const string _OriginalSourceListId = "_OriginalSourceListId";
-        internal const string _OriginalSourceItemId = "_OriginalSourceItemId";
-        internal const string IdField = "ID";
-        internal const string _SPSitePageFlags = "_SPSitePageFlags";
-        internal const string _PublishStartDate = "_PublishStartDate";
+        public const string BannerImageUrlField = "BannerImageUrl";
+        public const string CanvasField = "CanvasContent1";
+        public const string PageLayoutContentField = "LayoutWebpartsContent";
+        public const string PageLayoutType = "PageLayoutType";
+        public const string ApprovalStatus = "_ModerationStatus";
+        public const string ContentTypeId = "ContentTypeId";
+        public const string Title = "Title";
+        public const string ClientSideApplicationId = "ClientSideApplicationId";
+        public const string PromotedStateField = "PromotedState";
+        public const string FirstPublishedDate = "FirstPublishedDate";
+        public const string FileLeafRef = "FileLeafRef";
+        public const string FileType = "File_x0020_Type";
+        public const string FileDirRef = "FileDirRef";
+        public const string DescriptionField = "Description";
+        public const string _AuthorByline = "_AuthorByline";
+        public const string _TopicHeader = "_TopicHeader";
+        public const string _OriginalSourceUrl = "_OriginalSourceUrl";
+        public const string _OriginalSourceSiteId = "_OriginalSourceSiteId";
+        public const string _OriginalSourceWebId = "_OriginalSourceWebId";
+        public const string _OriginalSourceListId = "_OriginalSourceListId";
+        public const string _OriginalSourceItemId = "_OriginalSourceItemId";
+        public const string IdField = "ID";
+        public const string _SPSitePageFlags = "_SPSitePageFlags";
+        public const string _PublishStartDate = "_PublishStartDate";
 
         // feature
-        internal const string SitePagesFeatureId = "{b6917cb1-93a0-4b97-a84d-7cf49975d4ec}";
+        public const string SitePagesFeatureId = "{b6917cb1-93a0-4b97-a84d-7cf49975d4ec}";
 
         // folders
-        internal const string DefaultTemplatesFolder = "Templates";
+        public const string DefaultTemplatesFolder = "Templates";
 
         // Properties
-        internal const string TemplatesFolderGuid = "vti_TemplatesFolderGuid";
+        public const string TemplatesFolderGuid = "vti_TemplatesFolderGuid";
 
         // Spaces
-        internal const string SpacesLayoutType = "d39ad2cb-84bd-48a0-9daa-4aea9f644cd4";
-        internal const string SpaceContentField = "SpaceContent";
+        public const string SpacesLayoutType = "d39ad2cb-84bd-48a0-9daa-4aea9f644cd4";
+        public const string SpaceContentField = "SpaceContent";
 
         // Topic pages
-        internal const string TopicLayoutType = "Topic";
-        internal const string TopicEntityId = "_EntityId";
-        internal const string TopicEntityRelations = "_EntityRelations";
-        internal const string TopicEntityType = "_EntityType";
+        public const string TopicLayoutType = "Topic";
+        public const string TopicEntityId = "_EntityId";
+        public const string TopicEntityRelations = "_EntityRelations";
+        public const string TopicEntityType = "_EntityType";
 
         // Syntex models
-        internal const string ModelExplanations = "ModelExplanations";
-        internal const string ModelDescription = "ModelDescription";
-        internal const string ModelSchemas = "ModelSchemas";
-        internal const string ModelMappedClassifierName = "ModelMappedClassifierName";
-        internal const string ModelLastTrained = "ModelLastTrained";
-        internal const string ModelSettings = "ModelSettings";
-        internal const string ModelConfidenceScore = "ModelConfidenceScore";
-        internal const string ModelAccuracy = "ModelAccuracy";
-        internal const string ModelClassifiedItemCount = "ModelClassifiedItemCount";
-        internal const string ModelMismatchedItemCount = "ModelMismatchedItemCount";
+        public const string ModelExplanations = "ModelExplanations";
+        public const string ModelDescription = "ModelDescription";
+        public const string ModelSchemas = "ModelSchemas";
+        public const string ModelMappedClassifierName = "ModelMappedClassifierName";
+        public const string ModelLastTrained = "ModelLastTrained";
+        public const string ModelSettings = "ModelSettings";
+        public const string ModelConfidenceScore = "ModelConfidenceScore";
+        public const string ModelAccuracy = "ModelAccuracy";
+        public const string ModelClassifiedItemCount = "ModelClassifiedItemCount";
+        public const string ModelMismatchedItemCount = "ModelMismatchedItemCount";
 
         /// <summary>
         /// Contains the content identifier (ID) for content types used in the modern page infrastructure
         /// </summary>
-        internal const string ModernArticlePage = "0x0101009D1CB255DA76424F860D91F20E6C4118";
-        internal const string RepostPage = "0x0101009D1CB255DA76424F860D91F20E6C4118002A50BFCFB7614729B56886FADA02339B";
-        internal const string SpacesPage = "0x0101009D1CB255DA76424F860D91F20E6C41180043153F945E98468297E67C3EEE43AB70";
+        public const string ModernArticlePage = "0x0101009D1CB255DA76424F860D91F20E6C4118";
+        public const string RepostPage = "0x0101009D1CB255DA76424F860D91F20E6C4118002A50BFCFB7614729B56886FADA02339B";
+        public const string SpacesPage = "0x0101009D1CB255DA76424F860D91F20E6C41180043153F945E98468297E67C3EEE43AB70";
         #endregion
     }
 }

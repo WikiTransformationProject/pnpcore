@@ -74,7 +74,7 @@ namespace PnP.Core.Model
         /// <summary>
         /// Default constructor
         /// </summary>
-        internal TransientDictionary() :
+        public TransientDictionary() :
             base(StringComparer.InvariantCultureIgnoreCase)
         {
         }
@@ -83,7 +83,7 @@ namespace PnP.Core.Model
         /// Constructor that initializes based upon an existing Dictionary
         /// </summary>
         /// <param name="input"><see cref="Dictionary{TKey, TValue}"/> holding the key value pairs to add</param>
-        internal TransientDictionary(Dictionary<string, object> input) :
+        public TransientDictionary(Dictionary<string, object> input) :
             base(new Dictionary<string, object>(input, StringComparer.OrdinalIgnoreCase))
         {
         }

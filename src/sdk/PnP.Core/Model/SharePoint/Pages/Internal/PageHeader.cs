@@ -410,14 +410,17 @@ namespace PnP.Core.Model.SharePoint
                 header = header.Replace("@@authorbyline@@", jsonencoded);
 
                 int userId = -1;
-                try
+                if (!string.IsNullOrEmpty(data))
                 {
-                    var user = await clientContext.Web.EnsureUserAsync(data.Replace("\"", "").Split(new string[] { "|" }, StringSplitOptions.RemoveEmptyEntries)[0]).ConfigureAwait(false);
-                    userId = user.Id;
-                }
-                catch (Exception)
-                {
+                    try
+                    {
+                        var user = await clientContext.Web.EnsureUserAsync(data.Replace("\"", "").Split(new string[] { "|" }, StringSplitOptions.RemoveEmptyEntries)[0]).ConfigureAwait(false);
+                        userId = user.Id;
+                    }
+                    catch (Exception)
+                    {
 
+                    }
                 }
 
                 AuthorByLineId = userId;
