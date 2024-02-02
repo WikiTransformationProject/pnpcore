@@ -30,7 +30,8 @@ namespace PnP.Core.Services
 
         #region Lazy properties for fluent API
 
-        private readonly Lazy<IWeb> web = new Lazy<IWeb>(() =>
+        // HEU: made public to enable faking the web
+        public Lazy<IWeb> web = new Lazy<IWeb>(() =>
         {
             return new Web();
         }, true);
@@ -343,7 +344,8 @@ namespace PnP.Core.Services
         {
             get
             {
-                (web.Value as Web).PnPContext = this;
+                // HEU: changed from cast to Web to usage of IWeb to enable mocks
+                web.Value.PnPContext = this;
                 return web.Value;
             }
         }

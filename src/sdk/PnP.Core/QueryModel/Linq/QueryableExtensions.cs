@@ -605,9 +605,10 @@ namespace PnP.Core.QueryModel
                 throw new ArgumentNullException(nameof(source));
             }
 
-            if (source is BaseQueryableDataModelCollection<TSource> enumerable)
+            // https://github.com/pnp/pnpcore/issues/1376
+            if (source is BaseQueryableDataModelCollection<TSource> || source is IBaseQueryableDataModelCollectionMarker)
             {
-                return (IEnumerable<TSource>)enumerable.RequestedItems;
+                return (IEnumerable<TSource>)source.RequestedItems;
             }
 
             throw new InvalidOperationException(PnPCoreResources.Exception_InvalidOperation_NotAsyncQueryableSource);

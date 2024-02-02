@@ -15,7 +15,10 @@ namespace PnP.Core.Model.SharePoint
     {
         private bool hasChangedDueToDeleteOrAdd;
 
-        internal FieldValueCollection(IField field, string propertyName)
+        /// <summary>
+        /// HEU: made public
+        /// </summary>
+        public FieldValueCollection(IField field, string propertyName)
         {
             TypeAsString = field != null ? field.TypeAsString : "";
             Field = field;
