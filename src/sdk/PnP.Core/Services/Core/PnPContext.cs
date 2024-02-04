@@ -164,10 +164,11 @@ namespace PnP.Core.Services
 
         #region Properties
 
+        // HEU: made setter accessible...
         /// <summary>
         /// Uri of the SharePoint site we're working against
         /// </summary>
-        public Uri Uri { get; internal set; }
+        public Uri Uri { get; set; }
 
         /// <summary>
         /// Connected logger
@@ -356,10 +357,11 @@ namespace PnP.Core.Services
             }
         }
 
+        // HEU: making virtual to allow overriding in mock subclass
         /// <summary>
         /// Entry point for the Site Object
         /// </summary>
-        public ISite Site
+        public virtual ISite Site
         {
             get
             {
@@ -999,12 +1001,13 @@ namespace PnP.Core.Services
             return index != -1 ? originalString.Substring(prefix.Length, index - prefix.Length) : null;
         }
 
+        // HEU: changed visibility to aid mocking
         /// <summary>
         /// Simple is sub site check based upon the url pattern
         /// </summary>
         /// <param name="site">Uri to check</param>
         /// <returns>True if sub site, false otherwise</returns>
-        private static bool IsSubSite(Uri site)
+        protected static bool IsSubSite(Uri site)
         {
             string cleanedPath = site.AbsolutePath.ToLower().Replace("/teams/", "").Replace("/sites/", "").TrimEnd(new char[] { '/' });
 
