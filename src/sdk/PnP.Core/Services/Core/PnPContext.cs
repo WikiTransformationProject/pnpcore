@@ -31,42 +31,42 @@ namespace PnP.Core.Services
         #region Lazy properties for fluent API
 
         // HEU: made public to enable faking the web
-        public Lazy<IWeb> web = new Lazy<IWeb>(() =>
+        protected Lazy<IWeb> web = new Lazy<IWeb>(() =>
         {
             return new Web();
         }, true);
 
-        private readonly Lazy<ISite> site = new Lazy<ISite>(() =>
+        protected Lazy<ISite> site = new Lazy<ISite>(() =>
         {
             return new Site();
         }, true);
 
-        private readonly Lazy<ITeam> team = new Lazy<ITeam>(() =>
+        protected Lazy<ITeam> team = new Lazy<ITeam>(() =>
         {
             return new Team();
         }, true);
 
-        private readonly Lazy<IGraphGroup> group = new Lazy<IGraphGroup>(() =>
+        protected Lazy<IGraphGroup> group = new Lazy<IGraphGroup>(() =>
         {
             return new GraphGroup();
         }, true);
 
-        private readonly Lazy<ITermStore> termStore = new Lazy<ITermStore>(() =>
+        protected Lazy<ITermStore> termStore = new Lazy<ITermStore>(() =>
         {
             return new TermStore();
         }, true);
 
-        private readonly Lazy<ISocial> social = new Lazy<ISocial>(() =>
+        protected Lazy<ISocial> social = new Lazy<ISocial>(() =>
         {
             return new Social();
         }, true);
 
-        private readonly Lazy<IMe> me= new Lazy<IMe>(() =>
+        protected Lazy<IMe> me= new Lazy<IMe>(() =>
         {
             return new Me();
         }, true);
 
-        private readonly Lazy<IContentTypeHub> contentTypeHub = new Lazy<IContentTypeHub>(() =>
+        protected Lazy<IContentTypeHub> contentTypeHub = new Lazy<IContentTypeHub>(() =>
         {
             return new ContentTypeHub();
         }, true);
@@ -103,6 +103,12 @@ namespace PnP.Core.Services
                 globalOptions?.Value,
                 telemetryManager)
         {
+        }
+
+        // HEU: adding constructor to aid PnPContext mocking
+        public PnPContext() : this(null, null, null, null, new PnPContextFactoryOptions(), new PnPGlobalSettingsOptions(), null)
+        {
+            
         }
 
         internal PnPContext(ILogger logger,
