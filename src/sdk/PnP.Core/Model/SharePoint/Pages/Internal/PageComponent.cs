@@ -1,9 +1,10 @@
 ﻿namespace PnP.Core.Model.SharePoint
 {
+    // HEU: made public to use when creating web parts
     /// <summary>
     /// Client side webpart object (retrieved via the _api/web/GetClientSideWebParts REST call)
     /// </summary>
-    internal sealed class PageComponent : IPageComponent
+    public sealed class PageComponent : IPageComponent
     {
         /// <summary>
         /// Component type for client side webpart object

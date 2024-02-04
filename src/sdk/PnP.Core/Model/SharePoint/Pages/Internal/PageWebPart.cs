@@ -129,10 +129,11 @@ namespace PnP.Core.Model.SharePoint
         /// </summary>
         public JsonElement Properties { get; private set; }
 
+        // HEU: setter made available
         /// <summary>
         /// ServerProcessedContent json node
         /// </summary>
-        public JsonElement ServerProcessedContent { get; private set; }
+        public JsonElement ServerProcessedContent { get; set; }
 
         //public JObject DynamicDataPaths
         public JsonElement DynamicDataPaths { get; private set; }
