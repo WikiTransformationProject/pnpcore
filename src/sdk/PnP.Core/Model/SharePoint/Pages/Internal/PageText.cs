@@ -76,7 +76,7 @@ namespace PnP.Core.Model.SharePoint
         public override string ToHtml(float controlIndex)
         {
             // Can this control be hosted in this section type?
-            if (Section.Type == CanvasSectionTemplate.OneColumnFullWidth)
+            if (Section?.Type == CanvasSectionTemplate.OneColumnFullWidth)
             {
                 throw new ClientException(ErrorType.Unsupported, PnPCoreResources.Exception_Page_ControlNotAllowedInFullWidthSection);
             }
@@ -88,21 +88,21 @@ namespace PnP.Core.Model.SharePoint
                 Id = InstanceId.ToString("D"),
                 Position = new CanvasControlPosition()
                 {
-                    ZoneIndex = Section.Order,
-                    SectionIndex = Column.Order,
-                    SectionFactor = Column.ColumnFactor,
-                    LayoutIndex = Column.LayoutIndex,
+                    ZoneIndex = Section?.Order ?? 1,
+                    SectionIndex = Column?.Order ?? 1,
+                    SectionFactor = Column?.ColumnFactor ?? 12,
+                    LayoutIndex = Column?.LayoutIndex ?? 1,
                     ControlIndex = controlIndex,
                 },
                 Emphasis = new SectionEmphasis()
                 {
-                    ZoneEmphasis = Column.VerticalSectionEmphasis ?? Section.ZoneEmphasis,
+                    ZoneEmphasis = Column?.VerticalSectionEmphasis ?? Section?.ZoneEmphasis ?? 0,
                 },
                 EditorType = "CKEditor"
             };
 
             // Persist the collapsible section settings
-            if (Section.Collapsible && !Column.IsVerticalSectionColumn)
+            if (Section?.Collapsible == true && Column?.IsVerticalSectionColumn == false)
             {
                 controlData.ZoneGroupMetadata = new SectionZoneGroupMetadata()
                 {
@@ -113,7 +113,7 @@ namespace PnP.Core.Model.SharePoint
                     ShowDividerLine = Section.ShowDividerLine,
                 };
 
-                if (Section.IconAlignment.HasValue)
+                if (Section?.IconAlignment.HasValue == true)
                 {
                     controlData.ZoneGroupMetadata.IconAlignment = Section.IconAlignment.Value.ToString().ToLower();
                 }
@@ -123,9 +123,9 @@ namespace PnP.Core.Model.SharePoint
                 }
             }
 
-            if (section.Type == CanvasSectionTemplate.OneColumnVerticalSection)
+            if (section?.Type == CanvasSectionTemplate.OneColumnVerticalSection)
             {
-                if (section.Columns.First().Equals(Column))
+                if (section?.Columns.First().Equals(Column) == true)
                 {
                     controlData.Position.SectionFactor = 12;
                 }
