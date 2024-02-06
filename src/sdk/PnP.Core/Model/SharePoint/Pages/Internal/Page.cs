@@ -173,10 +173,21 @@ namespace PnP.Core.Model.SharePoint
         public string Name
         {
             get
-            {
+            {                
                 if (PageListItem != null)
                 {
-                    return PageListItem[PageConstants.FileLeafRef].ToString();
+                    // HEU: adding try catch mainly to aid unit testing; if there is no PageListItem, but pageName is set - why not use that?
+                    try 
+                    {
+                        return PageListItem[PageConstants.FileLeafRef].ToString();
+                    } catch
+                    {
+                        if (null != pageName)
+                        {
+                            return pageName;
+                        }
+                        throw;
+                    }
                 }
                 else
                 {
