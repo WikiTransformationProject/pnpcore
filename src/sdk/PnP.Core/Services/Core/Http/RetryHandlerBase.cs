@@ -110,7 +110,7 @@ namespace PnP.Core.Services
 
                     if (GlobalSettings != null && GlobalSettings.Logger != null)
                     {
-                        GlobalSettings.Logger.LogInformation($"Retrying request {request.RequestUri} due to status code {response.StatusCode}");
+                        GlobalSettings.Logger.LogInformation($"{(response.StatusCode == HttpStatusCode.TooManyRequests ? "[THROTTLED] " : "")}Retrying request {request.RequestUri} due to status code {response.StatusCode}");
                     }
                 }
                 catch (Exception ex)
@@ -159,7 +159,7 @@ namespace PnP.Core.Services
 
                 if (GlobalSettings != null && GlobalSettings.Logger != null)
                 {
-                    GlobalSettings.Logger.LogInformation($"[THROTTLING] Waiting {delayTimeSpan.Seconds} seconds before retrying");
+                    GlobalSettings.Logger.LogInformation($"[THROTTLED] Waiting {delayTimeSpan.TotalSeconds} seconds before retrying");
                 }
                 Task delay = Task.Delay(delayTimeSpan, cancellationToken);
 

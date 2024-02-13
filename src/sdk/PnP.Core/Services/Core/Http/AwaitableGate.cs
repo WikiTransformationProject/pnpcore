@@ -16,6 +16,15 @@ namespace WikiTraccs.Shared.Http
         private TaskCompletionSource<bool>? tcs;
         private Timer? timer;
         private DateTime releaseTimeUtc= DateTime.UtcNow;
+        public bool IsWaiting => waitCounter > 0;
+        public int WaitSecsLeft
+        {
+            get
+            {
+                return (int)(releaseTimeUtc - DateTime.UtcNow).TotalSeconds;
+            }
+        }
+        int waitCounter;
 
         public AwaitableGate(int initialWaitTimeMilliseconds = Timeout.Infinite)
         {
@@ -95,12 +104,14 @@ namespace WikiTraccs.Shared.Http
 
             try
             {
+                Interlocked.Increment(ref waitCounter);
                 await Task.WhenAny(tcsCopy.Task, Task.Delay(Timeout.Infinite, cancellationToken)).ConfigureAwait(false);
             }
             finally
             {
                 // after a completed wait - canceled or not - we need a new tcs
                 tcs = null;
+                Interlocked.Decrement(ref waitCounter);
             }
         }
 
