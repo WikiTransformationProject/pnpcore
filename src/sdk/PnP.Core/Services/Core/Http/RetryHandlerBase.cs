@@ -159,7 +159,7 @@ namespace PnP.Core.Services
 
                 if (GlobalSettings != null && GlobalSettings.Logger != null)
                 {
-                    GlobalSettings.Logger.LogInformation($"Waiting {delayTimeSpan.Seconds} seconds before retrying");
+                    GlobalSettings.Logger.LogInformation($"[THROTTLING] Waiting {delayTimeSpan.Seconds} seconds before retrying");
                 }
                 Task delay = Task.Delay(delayTimeSpan, cancellationToken);
 
