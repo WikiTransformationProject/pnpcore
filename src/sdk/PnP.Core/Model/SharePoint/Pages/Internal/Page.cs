@@ -1620,9 +1620,9 @@ namespace PnP.Core.Model.SharePoint
             return await SaveAsync(pageUrl).ConfigureAwait(false);
         }
 
-        public string Save(string pageName = null)
+        public string Save(string pageName = null, bool HEUassumeListItemMissing = false)
         {
-            return SaveAsync(pageName).GetAwaiter().GetResult();
+            return SaveAsync(pageName, HEUassumeListItemMissing).GetAwaiter().GetResult();
         }
 
         private bool IsPageListItemValueMissingOrEmpty(string fieldName)
@@ -1630,7 +1630,7 @@ namespace PnP.Core.Model.SharePoint
             return !PageListItem.Values.ContainsKey(fieldName) || string.IsNullOrEmpty(PageListItem[fieldName]?.ToString());
         }
 
-        public async Task<string> SaveAsync(string pageName = null)
+        public async Task<string> SaveAsync(string pageName = null, bool HEUassumeListItemMissing = false)
         {
             if (string.IsNullOrEmpty(pageName))
             {
@@ -1690,7 +1690,13 @@ namespace PnP.Core.Model.SharePoint
 
             this.pageName = pageName;
 
-            await EnsurePageListItemAsync(pageName).ConfigureAwait(false);
+            // ========================
+            // optimize one call away for a page creation scenario where we are 100% sure to newly create the page; this saves one 404 call
+            if (!HEUassumeListItemMissing)
+            {
+                await EnsurePageListItemAsync(pageName).ConfigureAwait(false);
+            }
+            // ============================================
 
             string serverRelativePageName;
             bool updatingExistingPage = false;
@@ -2234,26 +2240,44 @@ namespace PnP.Core.Model.SharePoint
 
         public async Task PublishAsync(string comment = null)
         {
+            await PublishAsync(comment, null, null).ConfigureAwait(false);
+        }
+
+        // HEU: introducing additional parameters to optimize away one call when cross-calling with PnP.Framework
+        public async Task PublishAsync(string comment = null, bool? isMinorVersionsEnabled = null, bool? isModerationEnabled = null)
+        {
             if (PageListItem != null)
             {
                 var pageFile = await PnPContext.Web.GetFileByServerRelativeUrlOrDefaultAsync($"{PageListItem[PageConstants.FileDirRef]}/{PageListItem[PageConstants.FileLeafRef]}", f => f.ListId, f => f.CheckOutType).ConfigureAwait(false);
                 if (pageFile != null)
                 {
-                    var sitePagesLibrary = await EnsurePagesLibraryAsync(PnPContext).ConfigureAwait(false);
+                    bool enableMinorVersions;
+                    bool enableModeration;
+                    if (!isMinorVersionsEnabled.HasValue || !isModerationEnabled.HasValue)
+                    {
+                        var sitePagesLibrary = await EnsurePagesLibraryAsync(PnPContext).ConfigureAwait(false);
+                        enableMinorVersions = sitePagesLibrary.EnableMinorVersions;
+                        enableModeration = sitePagesLibrary.EnableModeration;
+                    } else
+                    {
+                        enableMinorVersions = isMinorVersionsEnabled.Value;
+                        enableModeration = isModerationEnabled.Value;
+
+                    }
 
                     if (pageFile.CheckOutType != CheckOutType.None)
                     {
                         // Needs checkin
-                        await pageFile.CheckinAsync(comment, sitePagesLibrary.EnableMinorVersions ? CheckinType.MinorCheckIn : CheckinType.MajorCheckIn).ConfigureAwait(false);
+                        await pageFile.CheckinAsync(comment, enableMinorVersions ? CheckinType.MinorCheckIn : CheckinType.MajorCheckIn).ConfigureAwait(false);
                     }
 
-                    if (sitePagesLibrary.EnableMinorVersions)
+                    if (enableMinorVersions)
                     {
                         // Publishing
                         await pageFile.PublishAsync(comment).ConfigureAwait(false);
                     }
 
-                    if (sitePagesLibrary.EnableModeration)
+                    if (enableModeration)
                     {
                         // Approval 
                         await pageFile.ApproveAsync(comment).ConfigureAwait(false);

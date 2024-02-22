@@ -286,14 +286,14 @@ namespace PnP.Core.Model.SharePoint
         /// </summary>
         /// <param name="pageName">Page name to use</param>        
         /// <returns>The name of the saved page</returns>
-        Task<string> SaveAsync(string pageName = null);
+        Task<string> SaveAsync(string pageName = null, bool HEUassumeListItemMissing = false);
 
         /// <summary>
         /// Saves the page to the pages library
         /// </summary>
         /// <param name="pageName">Page name to use</param>
         /// <returns>The name of the saved page</returns>
-        string Save(string pageName = null);
+        string Save(string pageName = null, bool HEUassumeListItemMissing = false);
 
         /// <summary>
         /// Saves the page as a template page
@@ -346,6 +346,7 @@ namespace PnP.Core.Model.SharePoint
         /// </summary>
         /// <param name="comment">Publishing comment</param>
         public Task PublishAsync(string comment = null);
+        public Task PublishAsync(string comment = null, bool? isMinorVersionsEnabled = null, bool? isModerationEnabled = null);
 
         /// <summary>
         /// Schedules the publication of a client side page
