@@ -2,9 +2,10 @@
 
 namespace PnP.Core.Services
 {
-    internal static class CloudManager
+    // HEU: making public to access from WikiTraccs
+    public static class CloudManager
     {
-        internal static Microsoft365Environment GetEnvironmentFromUri(Uri url)
+        public static Microsoft365Environment GetEnvironmentFromUri(Uri url)
         {
             var dnsDomain = url.Authority.Substring(url.Authority.LastIndexOf('.') + 1);
 
