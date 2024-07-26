@@ -11,6 +11,7 @@ namespace PnP.Core.Model.SharePoint
         /// Gets or sets JsonProperty "controlIndex"
         /// </summary>
         [JsonPropertyName("controlIndex")]
-        public float ControlIndex { get; set; }
+        // HEU: making nullable because server seems to send Null sometimes which throws in JSON deserialization
+        public float? ControlIndex { get; set; }
     }
 }

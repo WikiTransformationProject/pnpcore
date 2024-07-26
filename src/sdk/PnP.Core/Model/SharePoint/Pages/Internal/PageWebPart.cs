@@ -249,7 +249,7 @@ namespace PnP.Core.Model.SharePoint
                     ZoneIndex = Section?.Order ?? 1,
                     SectionIndex = Column?.Order ?? 1,
                     SectionFactor = Column?.ColumnFactor ?? 12,
-                    LayoutIndex = Column?.LayoutIndex ?? 0,
+                    LayoutIndex = Column?.LayoutIndex ?? 1,
                     ControlIndex = controlIndex,
                 };
 

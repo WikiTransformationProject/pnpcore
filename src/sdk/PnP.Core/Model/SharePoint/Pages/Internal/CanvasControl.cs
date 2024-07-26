@@ -330,6 +330,15 @@ namespace PnP.Core.Model.SharePoint
             // Deserialize the json string
             var controlData = JsonSerializer.Deserialize<CanvasControlData>(controlDataJson, PnPConstants.JsonSerializer_IgnoreNullValues);
 
+            // v ================================================================== v
+            // HEU 2024-07-26 initializing control index that came back from the server as null (which seemed to be unexpected until now)
+            // also made ControlIndex nullable because otherwise above Deserialize<CanvasControlData> throws
+            if (controlData?.Position?.ControlIndex.HasValue == false) 
+            {
+                controlData.Position.ControlIndex = 1;
+            }
+            // ^ ================================================================== ^
+
             if (controlData.ControlType == 3)
             {
                 return typeof(PageWebPart);
