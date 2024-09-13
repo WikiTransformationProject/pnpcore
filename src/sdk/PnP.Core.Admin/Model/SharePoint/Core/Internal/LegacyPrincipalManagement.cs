@@ -17,7 +17,7 @@ namespace PnP.Core.Admin.Model.SharePoint
         private static readonly int MaxPermissions = 500;
         private static readonly int MaxAppIds = 500;
 
-        internal async static Task<List<SharePointAddIn>> GetSharePointAddInsAsync(PnPContext context, bool includeSubsites, VanityUrlOptions vanityUrlOptions)
+        internal async static Task<List<SharePointAddIn>> GetSharePointAddInsAsync(PnPContext context, bool includeSubsites, VanityUrlOptions vanityUrlOptions, bool loadLegacyPrincipalData = true)
         {
             List<SharePointAddIn> sharePointAddIns = new();
             List<LegacyPrincipal> legacyPrincipals = new();
@@ -40,64 +40,103 @@ namespace PnP.Core.Admin.Model.SharePoint
 
             using (var tenantAdminContext = await context.GetSharePointAdmin().GetTenantAdminCenterContextAsync(vanityUrlOptions).ConfigureAwait(false))
             {
-                // Generic principal load, we need this to know the permissions that the AddIns have
-                await LoadLegacyPrincipalsAsync(legacyPrincipals, null, serverRelativeUrlBuckets, tenantAdminContext).ConfigureAwait(false);
-
-                var json = new
+                if (loadLegacyPrincipalData)
                 {
-                    serverRelativeUrls = serverRelativeUrlsToCheck,
-                }.AsExpando();
+                    // Generic principal load, we need this to know the permissions that the AddIns have
+                    await LoadLegacyPrincipalsAsync(legacyPrincipals, null, serverRelativeUrlBuckets, tenantAdminContext, vanityUrlOptions, context.Uri.DnsSafeHost).ConfigureAwait(false);
+                }
 
-                var body = JsonSerializer.Serialize(json, typeof(ExpandoObject));
-
-                // Get the AddIns
-                var results = await (tenantAdminContext.Web as Web).RawRequestAsync(new ApiCall($"_api/web/AvailableAddIns", ApiType.SPORest, body), HttpMethod.Post).ConfigureAwait(false);
-
-                var jsonResponse = JsonSerializer.Deserialize<JsonElement>(results.Json);
-                if (jsonResponse.TryGetProperty("addins", out JsonElement addIns) && addIns.ValueKind == JsonValueKind.Array)
+                foreach (var serverRelativeUrlBucket in serverRelativeUrlBuckets)
                 {
-                    foreach (var addIn in addIns.EnumerateArray())
+                    string body = null;
+
+                    if (vanityUrlOptions != null)
                     {
-                        SharePointAddIn sharePointAddIn = new()
+                        var json = new
                         {
-                            AppIdentifier = addIn.GetProperty("appIdentifier").GetString(),
-                            ServerRelativeUrl = new Uri(addIn.GetProperty("currentWebUrl").GetString()).PathAndQuery,
-                            AppInstanceId = addIn.GetProperty("appInstanceId").GetGuid(),
-                            AppSource = (SharePointAddInSource)Enum.Parse(typeof(SharePointAddInSource), addIn.GetProperty("appSource").GetString()),
-                            AppWebFullUrl = addIn.GetProperty("appWebFullUrl").GetString(),
-                            AppWebId = addIn.GetProperty("appWebId").GetGuid(),
-                            AssetId = addIn.GetProperty("assetId").GetString(),
-                            CreationTime = addIn.GetProperty("creationTimeUtc").GetDateTime(),
-                            CurrentSiteId = addIn.GetProperty("currentSiteId").GetGuid(),
-                            CurrentWebId = addIn.GetProperty("currentWebId").GetGuid(),
-                            CurrentWebName = addIn.GetProperty("currentWebName").GetString(),
-                            CurrentWebFullUrl = addIn.GetProperty("currentWebUrl").GetString(),
-                            InstalledSiteId = addIn.GetProperty("installedSiteId").GetGuid(),
-                            InstalledWebId = addIn.GetProperty("installedWebId").GetGuid(),
-                            InstalledWebName = addIn.GetProperty("installedWebName").GetString(),
-                            InstalledWebFullUrl = addIn.GetProperty("installedWebUrl").GetString(),
-                            InstalledBy = addIn.GetProperty("installedBy").GetString(),
-                            LaunchUrl = addIn.GetProperty("launchUrl").GetString(),
-                            LicensePurchaseTime = addIn.GetProperty("licensePurchaseTime").GetDateTime(),
-                            Locale = addIn.GetProperty("locale").GetString(),
-                            ProductId = addIn.GetProperty("productId").GetGuid(),
-                            PurchaserIdentity = addIn.GetProperty("purchaserIdentity").GetString(),
-                            Status = (SharePointAddInStatus)Enum.Parse(typeof(SharePointAddInStatus), addIn.GetProperty("status").GetString()),
-                            TenantAppData = addIn.GetProperty("tenantAppData").GetString(),
-                            TenantAppDataUpdateTime = addIn.GetProperty("tenantAppDataUpdateTime").ValueKind == JsonValueKind.Null ? DateTime.MinValue : addIn.GetProperty("tenantAppDataUpdateTime").GetDateTime(),
-                            Title = addIn.GetProperty("title").GetString(),
-                        };
+                            urls = AsFullyQualified(serverRelativeUrlBucket, context.Uri.DnsSafeHost),
+                        }.AsExpando();
 
-                        // Complement the AddIn with the permission related information
-                        var legacyPrincipal = legacyPrincipals.FirstOrDefault(p=>p.AppIdentifier == sharePointAddIn.AppIdentifier && p.ServerRelativeUrl == sharePointAddIn.ServerRelativeUrl);
-                        if (legacyPrincipal != null)
+                        body = JsonSerializer.Serialize(json, typeof(ExpandoObject));
+                    }
+                    else
+                    {
+                        var json = new
                         {
-                            sharePointAddIn.SiteCollectionScopedPermissions = legacyPrincipal.SiteCollectionScopedPermissions;
-                            sharePointAddIn.TenantScopedPermissions = legacyPrincipal.TenantScopedPermissions;
-                            sharePointAddIn.AllowAppOnly = legacyPrincipal.AllowAppOnly;
+                            serverRelativeUrls = serverRelativeUrlBucket,
+                        }.AsExpando();
+
+                        body = JsonSerializer.Serialize(json, typeof(ExpandoObject));
+                    }
+
+                    // Get the AddIns
+                    var results = await (tenantAdminContext.Web as Web).RawRequestAsync(new ApiCall($"_api/web/AvailableAddIns", ApiType.SPORest, body), HttpMethod.Post).ConfigureAwait(false);
+
+                    var jsonResponse = JsonSerializer.Deserialize<JsonElement>(results.Json);
+                    if (jsonResponse.TryGetProperty("addins", out JsonElement addIns) && addIns.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var addIn in addIns.EnumerateArray())
+                        {
+                            // Skip some SPFx solutions that accidently might show up (API fix coming)
+                            if (addIn.GetProperty("appIdentifier").GetString().Contains("|ms.sp.int|", StringComparison.InvariantCultureIgnoreCase) &&
+                                addIn.GetProperty("appWebId").GetGuid() == Guid.Empty)
+                            {
+                                continue;
+                            }
+
+                            SharePointAddIn sharePointAddIn = new()
+                            {
+                                AppIdentifier = addIn.GetProperty("appIdentifier").GetString(),
+                                ServerRelativeUrl = new Uri(addIn.GetProperty("currentWebUrl").GetString()).PathAndQuery,
+                                AppInstanceId = addIn.GetProperty("appInstanceId").GetGuid(),
+                                AppSource = (SharePointAddInSource)Enum.Parse(typeof(SharePointAddInSource), addIn.GetProperty("appSource").GetString()),
+                                AppWebFullUrl = addIn.GetProperty("appWebFullUrl").GetString(),
+                                AppWebId = addIn.GetProperty("appWebId").GetGuid(),
+                                AssetId = addIn.GetProperty("assetId").GetString(),
+                                CreationTime = addIn.GetProperty("creationTimeUtc").GetDateTime(),
+                                CurrentSiteId = addIn.GetProperty("currentSiteId").GetGuid(),
+                                CurrentWebId = addIn.GetProperty("currentWebId").GetGuid(),
+                                CurrentWebName = addIn.GetProperty("currentWebName").GetString(),
+                                CurrentWebFullUrl = addIn.GetProperty("currentWebUrl").GetString(),
+                                InstalledSiteId = addIn.GetProperty("installedSiteId").GetGuid(),
+                                InstalledWebId = addIn.GetProperty("installedWebId").GetGuid(),
+                                InstalledWebName = addIn.GetProperty("installedWebName").GetString(),
+                                InstalledWebFullUrl = addIn.GetProperty("installedWebUrl").GetString(),
+                                InstalledBy = addIn.GetProperty("installedBy").GetString(),
+                                LaunchUrl = addIn.GetProperty("launchUrl").GetString(),
+                                LicensePurchaseTime = addIn.GetProperty("licensePurchaseTime").ValueKind == JsonValueKind.Null ? DateTime.MinValue : addIn.GetProperty("licensePurchaseTime").GetDateTime(),
+                                Locale = addIn.GetProperty("locale").GetString(),
+                                ProductId = addIn.GetProperty("productId").GetGuid(),
+                                PurchaserIdentity = addIn.GetProperty("purchaserIdentity").GetString(),
+                                Status = (SharePointAddInStatus)Enum.Parse(typeof(SharePointAddInStatus), addIn.GetProperty("status").GetString()),
+                                TenantAppData = addIn.GetProperty("tenantAppData").GetString(),
+                                TenantAppDataUpdateTime = addIn.GetProperty("tenantAppDataUpdateTime").ValueKind == JsonValueKind.Null ? DateTime.MinValue : addIn.GetProperty("tenantAppDataUpdateTime").GetDateTime(),
+                                Title = addIn.GetProperty("title").GetString(),
+                            };
+
+                            if (loadLegacyPrincipalData)
+                            {
+                                // Complement the AddIn with the permission related information
+                                LegacyPrincipal legacyPrincipal = null;
+                                if (vanityUrlOptions != null)
+                                {
+                                    legacyPrincipal = legacyPrincipals.FirstOrDefault(p => p.AppIdentifier == sharePointAddIn.AppIdentifier && p.AbsoluteUrl == sharePointAddIn.AbsoluteUrl);
+                                }
+                                else
+                                {
+                                    legacyPrincipal = legacyPrincipals.FirstOrDefault(p => p.AppIdentifier == sharePointAddIn.AppIdentifier && p.ServerRelativeUrl == sharePointAddIn.ServerRelativeUrl);
+                                }
+                                
+                                if (legacyPrincipal != null)
+                                {
+                                    sharePointAddIn.SiteCollectionScopedPermissions = legacyPrincipal.SiteCollectionScopedPermissions;
+                                    sharePointAddIn.TenantScopedPermissions = legacyPrincipal.TenantScopedPermissions;
+                                    sharePointAddIn.AllowAppOnly = legacyPrincipal.AllowAppOnly;
+                                }
+                            }
+
+                            sharePointAddIns.Add(sharePointAddIn);
                         }
-
-                        sharePointAddIns.Add(sharePointAddIn);
                     }
                 }
             }
@@ -116,7 +155,7 @@ namespace PnP.Core.Admin.Model.SharePoint
                 context.Web.Url.LocalPath
             };
 
-            if (includeSubsites && !tenantOnly) 
+            if (includeSubsites && !tenantOnly)
             {
                 var webs = await WebEnumerator.GetWithDetailsAsync(context, null, true).ConfigureAwait(false);
                 foreach (var web in webs)
@@ -130,7 +169,7 @@ namespace PnP.Core.Admin.Model.SharePoint
             using (var tenantAdminContext = await context.GetSharePointAdmin().GetTenantAdminCenterContextAsync(vanityUrlOptions).ConfigureAwait(false))
             {
                 // Generic principal load, this will get the permission information of the ACS principals
-                await LoadLegacyPrincipalsAsync(legacyPrincipals, legacyServicePrincipals, serverRelativeUrlBuckets, tenantAdminContext).ConfigureAwait(false);
+                await LoadLegacyPrincipalsAsync(legacyPrincipals, legacyServicePrincipals, serverRelativeUrlBuckets, tenantAdminContext, vanityUrlOptions, context.Uri.DnsSafeHost).ConfigureAwait(false);
 
                 // ACS specific data loading
                 List<string> appIds = new();
@@ -149,7 +188,7 @@ namespace PnP.Core.Admin.Model.SharePoint
                 {
                     var json = new
                     {
-                        appIds,
+                        appIds = appIdBucket,
                     }.AsExpando();
 
                     var body = JsonSerializer.Serialize(json, typeof(ExpandoObject));
@@ -199,13 +238,24 @@ namespace PnP.Core.Admin.Model.SharePoint
                             var tempACSPrincipal = tempACSPrincipals.FirstOrDefault(p => p.AppIdentifier == legacyPrincipal.AppIdentifier);
                             if (tempACSPrincipal != null)
                             {
-                                if (!acsPrincipals.Any(p => p.AppIdentifier == legacyPrincipal.AppIdentifier && p.ServerRelativeUrl == legacyPrincipal.ServerRelativeUrl))
+                                bool acsPrincipalFound = false;
+                                if (vanityUrlOptions != null)
+                                {
+                                    acsPrincipalFound = acsPrincipals.Any(p => p.AppIdentifier == legacyPrincipal.AppIdentifier && p.AbsoluteUrl == legacyPrincipal.AbsoluteUrl);
+                                }
+                                else
+                                {
+                                    acsPrincipalFound = acsPrincipals.Any(p => p.AppIdentifier == legacyPrincipal.AppIdentifier && p.ServerRelativeUrl == legacyPrincipal.ServerRelativeUrl);
+                                }
+
+                                if (!acsPrincipalFound)
                                 {
                                     acsPrincipals.Add(new ACSPrincipal
                                     {
                                         AppIdentifier = legacyPrincipal.AppIdentifier,
                                         AllowAppOnly = legacyPrincipal.AllowAppOnly,
                                         ServerRelativeUrl = legacyPrincipal.ServerRelativeUrl,
+                                        AbsoluteUrl = legacyPrincipal.AbsoluteUrl,
                                         SiteCollectionScopedPermissions = legacyPrincipal.SiteCollectionScopedPermissions,
                                         TenantScopedPermissions = legacyPrincipal.TenantScopedPermissions,
                                         Title = legacyPrincipal.Title,
@@ -219,15 +269,27 @@ namespace PnP.Core.Admin.Model.SharePoint
                         }
 
                         // As we've only added principals with tenant permissions for the first site so far we need to copy them for all other investigated webs
-                        foreach (var acsPrincipal in acsPrincipals.ToList().Where(p => p.ServerRelativeUrl == serverRelativeUrlsToCheck[0] && p.TenantScopedPermissions.Any()))
+                        IEnumerable<ACSPrincipal> acsPrincipalsToCopy = null;
+
+                        if (vanityUrlOptions != null)
                         {
-                            for (int i = 1; i < serverRelativeUrlsToCheck.Count; i++) 
-                            { 
+                            acsPrincipalsToCopy = acsPrincipals.ToList().Where(p => p.AbsoluteUrl == $"https://{context.Uri.DnsSafeHost}{serverRelativeUrlsToCheck[0]}" && p.TenantScopedPermissions.Any());
+                        }
+                        else
+                        {
+                            acsPrincipalsToCopy = acsPrincipals.ToList().Where(p => p.ServerRelativeUrl == serverRelativeUrlsToCheck[0] && p.TenantScopedPermissions.Any());
+                        }
+
+                        foreach (var acsPrincipal in acsPrincipalsToCopy)
+                        {
+                            for (int i = 1; i < serverRelativeUrlsToCheck.Count; i++)
+                            {
                                 acsPrincipals.Add(new ACSPrincipal
                                 {
                                     AppIdentifier = acsPrincipal.AppIdentifier,
                                     AllowAppOnly = acsPrincipal.AllowAppOnly,
                                     ServerRelativeUrl = serverRelativeUrlsToCheck[i],
+                                    AbsoluteUrl = $"https://{context.Uri.DnsSafeHost}{serverRelativeUrlsToCheck[i]}",
                                     SiteCollectionScopedPermissions = acsPrincipal.SiteCollectionScopedPermissions,
                                     TenantScopedPermissions = acsPrincipal.TenantScopedPermissions,
                                     Title = acsPrincipal.Title,
@@ -251,9 +313,10 @@ namespace PnP.Core.Admin.Model.SharePoint
                             }
 
                             // empty server relative url as these apply for all server relative urls
-                            foreach(var acsPrincipal in acsPrincipals)
+                            foreach (var acsPrincipal in acsPrincipals)
                             {
                                 acsPrincipal.ServerRelativeUrl = "";
+                                acsPrincipal.AbsoluteUrl = "";
                             }
                         }
                     }
@@ -263,7 +326,7 @@ namespace PnP.Core.Admin.Model.SharePoint
             return acsPrincipals;
         }
 
-        internal static async Task<List<ILegacyServicePrincipal>> GetValidLegacyServicePrincipalAppIdsAsync(PnPContext context)
+        internal static async Task<List<ILegacyServicePrincipal>> GetValidLegacyServicePrincipalAppIdsAsync(PnPContext context, bool includeExpiredPrincipals, VanityUrlOptions vanityUrlOptions)
         {
             List<ILegacyServicePrincipal> servicePrincipals = new();
 
@@ -290,12 +353,12 @@ namespace PnP.Core.Admin.Model.SharePoint
                 // load the valid principals
                 if (jsonResponse.TryGetProperty("value", out JsonElement value) && value.ValueKind == JsonValueKind.Array)
                 {
-                    foreach(var legacyServicePrincipal in value.EnumerateArray())
+                    foreach (var legacyServicePrincipal in value.EnumerateArray())
                     {
                         if (legacyServicePrincipal.TryGetProperty("passwordCredentials", out JsonElement keyCredentials) && keyCredentials.ValueKind == JsonValueKind.Array)
                         {
                             // Only include service principals which are still valid
-                            foreach(var keyCredential in keyCredentials.EnumerateArray())
+                            foreach (var keyCredential in keyCredentials.EnumerateArray())
                             {
                                 var endDate = DateTime.MinValue;
                                 if (keyCredential.TryGetProperty("endDateTime", out JsonElement endDateTime))
@@ -303,7 +366,7 @@ namespace PnP.Core.Admin.Model.SharePoint
                                     endDate = endDateTime.GetDateTime();
                                 }
 
-                                if (endDate >= DateTime.Now.ToUniversalTime())
+                                if (includeExpiredPrincipals || endDate >= DateTime.Now.ToUniversalTime())
                                 {
                                     servicePrincipals.Add(new LegacyServicePrincipal
                                     {
@@ -313,7 +376,8 @@ namespace PnP.Core.Admin.Model.SharePoint
                                         ValidUntil = endDate
                                     });
 
-                                    // no need to check the next keycredential as we've a valid one
+                                    // no need to check the next keycredential as we've a valid one, if there's more than one credential they're returned with the 
+                                    // most recent first. So the first will be either a valid credential or the last expired one
                                     break;
                                 }
                             }
@@ -329,22 +393,84 @@ namespace PnP.Core.Admin.Model.SharePoint
             }
             while (nextPageToken != null);
 
+            // While above approach will find all principals registered using appregnew.aspx it's not detecting the case where the app was created using Entra registration and then 
+            // later granted permissions using appinv.aspx. This only applies to ACS principals scoped to the full tenant created by calling appinv.asxp from tenant admin center.
+            using (var tenantAdminContext = await context.GetSharePointAdmin().GetTenantAdminCenterContextAsync(vanityUrlOptions).ConfigureAwait(false))
+            {
+                Uri tenantAdminUrl = vanityUrlOptions != null ? vanityUrlOptions.AdminCenterUri : tenantAdminContext.Uri;
+                var json = new
+                {
+                    urls = new List<string> { tenantAdminUrl.ToString() }
+                }.AsExpando();
+
+                string body = JsonSerializer.Serialize(json, typeof(ExpandoObject));
+
+                var results = await (tenantAdminContext.Web as Web).RawRequestAsync(new ApiCall($"_api/web/GetAddinPrincipalsHavingPermissionsInSites", ApiType.SPORest, body), HttpMethod.Post).ConfigureAwait(false);
+
+                jsonResponse = JsonSerializer.Deserialize<JsonElement>(results.Json);
+                if (jsonResponse.TryGetProperty("addinPrincipals", out JsonElement addInPrincipals))
+                {
+                    if (addInPrincipals.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var addInPrincipal in addInPrincipals.EnumerateArray())
+                        {
+                            Guid appId = Guid.Parse(AppIdFromAppIdentifier(addInPrincipal.GetProperty("appIdentifier").GetString()));
+
+                            if (appId == Guid.Parse("00000003-0000-0ff1-ce00-000000000000"))
+                            {
+
+                               // Skip the SharePoint Online principal
+                                continue;
+                            }
+
+                            if (servicePrincipals.Any(p => p.AppId == appId))
+                            {
+                                // Skip the principal as it's already loaded
+                                continue;
+                            }
+
+                            servicePrincipals.Add(new LegacyServicePrincipal()
+                            {
+                                AppId = Guid.Parse(AppIdFromAppIdentifier(addInPrincipal.GetProperty("appIdentifier").GetString())),
+                                AppIdentifier = addInPrincipal.GetProperty("appIdentifier").GetString(),
+                                Name = addInPrincipal.GetProperty("title").GetString(),
+                                // We don't know 
+                                ValidUntil = DateTime.MinValue
+                            });
+                        }
+                    }
+                }
+            }
+
             return servicePrincipals;
         }
 
-        private static async Task LoadLegacyPrincipalsAsync(List<LegacyPrincipal> legacyPrincipals, List<ILegacyServicePrincipal> legacyServicePrincipals, List<List<string>> serverRelativeUrlBuckets, PnPContext tenantAdminContext)
+        private static async Task LoadLegacyPrincipalsAsync(List<LegacyPrincipal> legacyPrincipals, List<ILegacyServicePrincipal> legacyServicePrincipals, List<List<string>> serverRelativeUrlBuckets, PnPContext tenantAdminContext, VanityUrlOptions vanityUrlOptions, string dnsSafeHost)
         {
             int bucketCount = 1;
             foreach (var serverRelativeUrlBucket in serverRelativeUrlBuckets)
             {
                 // Step 1: Identify which principals have permissions in the web(s)
-                var json = new
+                string body = null;
+
+                if (vanityUrlOptions != null)
                 {
-                    serverRelativeUrls = serverRelativeUrlBucket,
-                }.AsExpando();
+                    var json = new
+                    {
+                        urls = AsFullyQualified(serverRelativeUrlBucket, dnsSafeHost)
+                    }.AsExpando();
 
-                var body = JsonSerializer.Serialize(json, typeof(ExpandoObject));
+                    body = JsonSerializer.Serialize(json, typeof(ExpandoObject));
+                }
+                else
+                {
+                    var json = new
+                    {
+                        serverRelativeUrls = serverRelativeUrlBucket,
+                    }.AsExpando();
 
+                    body = JsonSerializer.Serialize(json, typeof(ExpandoObject));
+                }
                 var results = await (tenantAdminContext.Web as Web).RawRequestAsync(new ApiCall($"_api/web/GetAddinPrincipalsHavingPermissionsInSites", ApiType.SPORest, body), HttpMethod.Post).ConfigureAwait(false);
 
                 var jsonResponse = JsonSerializer.Deserialize<JsonElement>(results.Json);
@@ -358,7 +484,10 @@ namespace PnP.Core.Admin.Model.SharePoint
                             {
                                 AppIdentifier = addInPrincipal.GetProperty("appIdentifier").GetString(),
                                 ServerRelativeUrl = addInPrincipal.GetProperty("serverRelativeUrl").GetString(),
+                                AbsoluteUrl = addInPrincipal.GetProperty("absoluteUrl").ToString(),
                                 Title = addInPrincipal.GetProperty("title").GetString(),
+                                SiteCollectionScopedPermissions = new List<LegacySiteCollectionPermission>(),
+                                TenantScopedPermissions = new List<LegacyTenantPermission>()
                             });
                         }
                     }
@@ -371,13 +500,27 @@ namespace PnP.Core.Admin.Model.SharePoint
                     foreach (var legacyServicePrincipal in legacyServicePrincipals)
                     {
                         // As the list also contains the site collection scoped ACS principals we need to check for duplicates
-                        if (!legacyPrincipals.Any(p => p.AppIdentifier == legacyServicePrincipal.AppIdentifier && p.ServerRelativeUrl == serverRelativeUrlBucket[0]))
+                        bool legacyPrincipalFound = false;
+
+                        if (vanityUrlOptions != null)
+                        {
+                            legacyPrincipalFound = legacyPrincipals.Any(p => p.AppIdentifier == legacyServicePrincipal.AppIdentifier && p.AbsoluteUrl == $"https://{dnsSafeHost}{serverRelativeUrlBucket[0]}");
+                        }
+                        else
+                        {
+                            legacyPrincipalFound = legacyPrincipals.Any(p => p.AppIdentifier == legacyServicePrincipal.AppIdentifier && p.ServerRelativeUrl == serverRelativeUrlBucket[0]);
+                        }
+
+                        if (!legacyPrincipalFound)
                         {
                             legacyPrincipals.Add(new LegacyPrincipal()
                             {
                                 AppIdentifier = legacyServicePrincipal.AppIdentifier,
                                 ServerRelativeUrl = serverRelativeUrlBucket[0],
+                                AbsoluteUrl = $"https://{dnsSafeHost}{serverRelativeUrlBucket[0]}",
                                 Title = legacyServicePrincipal.Name,
+                                SiteCollectionScopedPermissions = new List<LegacySiteCollectionPermission>(),
+                                TenantScopedPermissions = new List<LegacyTenantPermission>()
                             });
                         }
                     }
@@ -396,12 +539,24 @@ namespace PnP.Core.Admin.Model.SharePoint
                     results = new List<string>() { legacyPrincipal.AppIdentifier }
                 }.AsExpando();
 
-                var addin = new
+                if (vanityUrlOptions != null)
                 {
-                    serverRelativeUrl = legacyPrincipal.ServerRelativeUrl,
-                    appIdentifiers,
-                };
-                addinsToQuery.Add(addin.AsExpando());
+                    var addin = new
+                    {
+                        url = legacyPrincipal.AbsoluteUrl,
+                        appIdentifiers,
+                    };
+                    addinsToQuery.Add(addin.AsExpando());
+                }
+                else
+                {
+                    var addin = new
+                    {
+                        serverRelativeUrl = legacyPrincipal.ServerRelativeUrl,
+                        appIdentifiers,
+                    };
+                    addinsToQuery.Add(addin.AsExpando());
+                }
             }
 
             if (legacyServicePrincipals != null)
@@ -414,12 +569,24 @@ namespace PnP.Core.Admin.Model.SharePoint
                         results = new List<string>() { legacyPrincipal.AppIdentifier }
                     }.AsExpando();
 
-                    var addin = new
+                    if (vanityUrlOptions != null)
                     {
-                        serverRelativeUrl = serverRelativeUrlBuckets[0][0],
-                        appIdentifiers,
-                    };
-                    addinsToQuery.Add(addin.AsExpando());
+                        var addin = new
+                        {
+                            url = $"https://{dnsSafeHost}{serverRelativeUrlBuckets[0][0]}",
+                            appIdentifiers,
+                        };
+                        addinsToQuery.Add(addin.AsExpando());
+                    }
+                    else
+                    {
+                        var addin = new
+                        {
+                            serverRelativeUrl = serverRelativeUrlBuckets[0][0],
+                            appIdentifiers,
+                        };
+                        addinsToQuery.Add(addin.AsExpando());
+                    }
                 }
             }
 
@@ -429,7 +596,7 @@ namespace PnP.Core.Admin.Model.SharePoint
             {
                 var json = new
                 {
-                    addins = addinsToQuery
+                    addins = addInsToQueryBucket
                 }.AsExpando();
 
                 var body = JsonSerializer.Serialize(json, typeof(ExpandoObject));
@@ -443,10 +610,18 @@ namespace PnP.Core.Admin.Model.SharePoint
                     {
                         foreach (var addInPermission in addinPermissions.EnumerateArray())
                         {
-                            string appIdentifier = addInPermission.GetProperty("appIdentifier").GetString();
-                            string serverRelativeUrl = addInPermission.GetProperty("serverRelativeUrl").GetString();
-
-                            var legacyPrincipalToUpdate = legacyPrincipals.First(p => p.AppIdentifier == appIdentifier && p.ServerRelativeUrl == serverRelativeUrl);
+                            string appIdentifier = addInPermission.GetProperty("appIdentifier").GetString();                            
+                            LegacyPrincipal legacyPrincipalToUpdate = null;
+                            if (vanityUrlOptions != null)
+                            {
+                                string absoluteUrl = addInPermission.GetProperty("absoluteUrl").GetString();
+                                legacyPrincipalToUpdate = legacyPrincipals.First(p => p.AppIdentifier == appIdentifier && p.AbsoluteUrl == absoluteUrl);
+                            }
+                            else
+                            {
+                                string serverRelativeUrl = addInPermission.GetProperty("serverRelativeUrl").GetString();
+                                legacyPrincipalToUpdate = legacyPrincipals.First(p => p.AppIdentifier == appIdentifier && p.ServerRelativeUrl == serverRelativeUrl);
+                            }
 
                             legacyPrincipalToUpdate.AllowAppOnly = addInPermission.GetProperty("allowAppOnly").GetBoolean();
 
@@ -498,8 +673,8 @@ namespace PnP.Core.Admin.Model.SharePoint
         private static string AppIdFromAppIdentifier(string appIdentifier)
         {
             var split1 = appIdentifier.Split('@');
-            if (split1.Length == 2) 
-            { 
+            if (split1.Length == 2)
+            {
                 var split2 = split1[0].Split('|');
                 if (split2.Length == 3)
                 {
@@ -539,6 +714,18 @@ namespace PnP.Core.Admin.Model.SharePoint
             }
 
             return splitList;
+        }
+
+        private static List<string> AsFullyQualified(List<string> serverRelativeUrlList, string dnsSafeHost)
+        {
+            List<string> fullyQualified = new();
+
+            for (int i = 0; i < serverRelativeUrlList.Count; i++)
+            {
+                fullyQualified.Add($"https://{dnsSafeHost}{serverRelativeUrlList[i]}");
+            }
+
+            return fullyQualified;
         }
     }
 }

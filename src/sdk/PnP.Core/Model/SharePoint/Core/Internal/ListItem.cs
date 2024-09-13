@@ -32,6 +32,7 @@ namespace PnP.Core.Model.SharePoint
     {
         internal const string FolderPath = "folderPath";
         internal const string UnderlyingObjectType = "underlyingObjectType";
+        GenericRequestModule handleUpdateExceptionsModule;
 
         #region Construction
         public ListItem()
@@ -50,28 +51,7 @@ namespace PnP.Core.Model.SharePoint
 
                             // In some cases SharePoint will return HTTP 200 indicating the list item was added ok, but one or more fields could 
                             // not be added which is indicated via the HasException property on the field. If so then throw an error.
-                            if (field.TryGetProperty("HasException", out JsonElement hasExceptionProperty) && hasExceptionProperty.GetBoolean() == true)
-                            {
-                                bool handled = false;
-                                if (!input.ApiResponse.Equals(default) && input.ApiResponse.BatchRequestId != Guid.Empty)
-                                {
-                                    var actualBatch = PnPContext.BatchClient.GetBatchByBatchRequestId(input.ApiResponse.BatchRequestId);
-                                    if (!actualBatch.ThrowOnError)
-                                    {
-                                        // Add error to used batch
-                                        actualBatch.AddBatchResult(actualBatch.GetRequest(input.ApiResponse.BatchRequestId),
-                                                                 System.Net.HttpStatusCode.OK,
-                                                                 input.JsonElement.ToString(),
-                                                                 new SharePointRestError(ErrorType.SharePointRestServiceError, (int)System.Net.HttpStatusCode.OK, string.Format(PnPCoreResources.Exception_ListItemAdd_WrongInternalFieldName, fieldName)));
-                                        handled = true;     
-                                    }
-                                }
-
-                                if (!handled)
-                                {
-                                    throw new SharePointRestServiceException(string.Format(PnPCoreResources.Exception_ListItemAdd_WrongInternalFieldName, fieldName));
-                                }
-                            }
+                            HandleValidateAddAndUpdateResponse(field, input.JsonElement, fieldName, input.ApiResponse.BatchRequestId);
 
                             if (fieldName == "Id")
                             {
@@ -117,51 +97,10 @@ namespace PnP.Core.Model.SharePoint
             AddApiCallHandler = async (keyValuePairs) =>
             {
                 var parentList = Parent.Parent as List;
-                // sample parent list uri: https://bertonline.sharepoint.com/sites/modern/_api/Web/Lists(guid'b2d52a36-52f1-48a4-b499-629063c6a38c')
                 var parentListUri = $"{PnPContext.Uri.AbsoluteUri}/_api/Web/Lists(guid'{parentList.Id}')";
-
-                // sample parent list entity type name: DemolistList (skip last 4 chars)
-                // Sample parent library type name: MyDocs
-                var parentListTitle = !string.IsNullOrEmpty(parentList.GetMetadata(PnPConstants.MetaDataRestEntityTypeName)) ? parentList.GetMetadata(PnPConstants.MetaDataRestEntityTypeName) : null;
-
-                // If this list we're adding items to was not fetched from the server than throw an error
-                string serverRelativeUrl = null;
-                if (string.IsNullOrEmpty(parentListTitle) || string.IsNullOrEmpty(parentListUri) || !parentList.IsPropertyAvailable(p => p.TemplateType))
-                {
-                    // Fall back to loading the RootFolder property if we can't determine the list name
-                    await parentList.EnsurePropertiesAsync(p => p.RootFolder).ConfigureAwait(false);
-                    serverRelativeUrl = parentList.RootFolder.ServerRelativeUrl;
-                }
-                else
-                {
-                    serverRelativeUrl = ListMetaDataMapper.RestEntityTypeNameToUrl(PnPContext.Uri, parentListTitle, parentList.TemplateType);
-                }
-
-                // drop the everything in front of _api as the batching logic will add that automatically
-                var baseApiCall = parentListUri.Substring(parentListUri.IndexOf("_api"));
 
                 // Define the JSON body of the update request based on the actual changes
                 dynamic body = new ExpandoObject();
-
-                var decodedUrlFolderPath = serverRelativeUrl;
-                if (keyValuePairs.ContainsKey(FolderPath))
-                {
-                    if (keyValuePairs[FolderPath] != null)
-                    {
-                        var folderPath = keyValuePairs[FolderPath].ToString();
-                        if (!string.IsNullOrEmpty(folderPath))
-                        {
-                            if (folderPath.ToLower().StartsWith(serverRelativeUrl))
-                            {
-                                decodedUrlFolderPath = folderPath;
-                            }
-                            else
-                            {
-                                decodedUrlFolderPath = $"{serverRelativeUrl}/{folderPath.TrimStart('/')}";
-                            }
-                        }
-                    }
-                }
 
                 var underlyingObjectType = (int)FileSystemObjectType.File;
 
@@ -173,16 +112,27 @@ namespace PnP.Core.Model.SharePoint
                     }
                 }
 
-                body.listItemCreateInfo = new
-                {
-                    FolderPath = new
-                    {
-                        DecodedUrl = decodedUrlFolderPath
-                    },
-                    UnderlyingObjectType = underlyingObjectType
-                };
-
                 body.bNewDocumentUpdate = false;
+                // configure folderpath if folderpath key is present
+                if ((await TryGetDecodedUrlFolderPathAsync(keyValuePairs, parentList).ConfigureAwait(false)) is string decodedUrlFolderPath
+                    && !string.IsNullOrEmpty(decodedUrlFolderPath))
+                {
+                    body.listItemCreateInfo = new
+                    {
+                        FolderPath = new
+                        {
+                            DecodedUrl = decodedUrlFolderPath
+                        },
+                        UnderlyingObjectType = underlyingObjectType
+                    };
+                }
+                else
+                {
+                    body.listItemCreateInfo = new
+                    {
+                        UnderlyingObjectType = underlyingObjectType
+                    };
+                }
 
                 if (Values.Any())
                 {
@@ -206,9 +156,101 @@ namespace PnP.Core.Model.SharePoint
                 // Serialize object to json
                 var bodyContent = JsonSerializer.Serialize(body, typeof(ExpandoObject), PnPConstants.JsonSerializer_WriteIndentedTrue);
 
+                // drop the everything in front of _api as the batching logic will add that automatically
+                var baseApiCall = parentListUri.Substring(parentListUri.IndexOf("_api"));
                 // Return created api call
                 return new ApiCall($"{baseApiCall}/AddValidateUpdateItemUsingPath", ApiType.SPORest, bodyContent);
             };
+
+            handleUpdateExceptionsModule = new GenericRequestModule()
+            {
+                ResponseHandler = (statusCode, headers, responseContent, batchRequestId) =>
+                {
+                    // Parse the received json content
+                    var json = JsonSerializer.Deserialize<JsonElement>(responseContent, PnPConstants.JsonSerializer_AllowTrailingCommasTrue);
+
+                    if (json.TryGetProperty("value", out JsonElement value) && value.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var field in value.EnumerateArray())
+                        {
+                            var fieldName = field.GetProperty("FieldName").GetString();
+                            var fieldValue = field.GetProperty("FieldValue").GetString();
+
+                            // In some cases SharePoint will return HTTP 200 indicating the list item was added ok, but one or more fields could 
+                            // not be added which is indicated via the HasException property on the field. If so then throw an error.
+                            HandleValidateAddAndUpdateResponse(field, value, fieldName, batchRequestId);
+                        }
+                    }
+
+                    return responseContent;
+                }
+            };
+        }
+
+        private void HandleValidateAddAndUpdateResponse(JsonElement field, JsonElement value, string fieldName, Guid batchRequestId)
+        {
+            // In some cases SharePoint will return HTTP 200 indicating the list item was added ok, but one or more fields could 
+            // not be added which is indicated via the HasException property on the field. If so then throw an error.
+            if (field.TryGetProperty("HasException", out JsonElement hasExceptionProperty) && hasExceptionProperty.GetBoolean() == true)
+            {
+                bool handled = false;
+                if (batchRequestId != Guid.Empty)
+                {
+                    var actualBatch = PnPContext.BatchClient.GetBatchByBatchRequestId(batchRequestId);
+                    if (!actualBatch.ThrowOnError)
+                    {
+                        // Add error to used batch
+                        actualBatch.AddBatchResult(actualBatch.GetRequest(batchRequestId),
+                                                 System.Net.HttpStatusCode.OK,
+                                                 value.ToString(),
+                                                 new SharePointRestError(ErrorType.SharePointRestServiceError, (int)System.Net.HttpStatusCode.OK, string.Format(PnPCoreResources.Exception_ListItemAdd_WrongInternalFieldName, fieldName)));
+                        handled = true;
+                    }
+                }
+
+                if (!handled)
+                {
+                    throw new SharePointRestServiceException(string.Format(PnPCoreResources.Exception_ListItemAdd_WrongInternalFieldName, fieldName));
+                }
+            }
+
+        }
+
+        /// <summary>
+        /// Tries to get the decoded URL for the folder path from the provided key-value pairs.
+        /// If the folder path starts with the server relative URL or it is an absolute URL, it is returned as is.
+        /// Otherwise, the server relative URL is added in front of the folder path.
+        /// The method ensures that the returned URL is an absolute URL.
+        /// </summary>
+        /// <param name="keyValuePairs">The key-value pairs that may contain the folder path.</param>
+        /// <param name="parentList">The parent list that contains the server relative URL.</param>
+        /// <returns>The decoded URL for the folder path, or null if the folder path is not found or is empty.</returns>
+        private static async Task<string> TryGetDecodedUrlFolderPathAsync(Dictionary<string, object> keyValuePairs, List parentList)
+        {
+            if (!keyValuePairs.TryGetValue(FolderPath, out object folderPathObject)
+                || folderPathObject is not string folderPath
+                || string.IsNullOrEmpty(folderPath))
+            {
+                return null;
+            }
+
+            var webServerRelativeUrl = parentList.PnPContext.Uri.AbsolutePath.TrimEnd('/');
+            var decodedUrlFolderPath = folderPath.ToLower() switch
+            {
+                // If the folder path starts with the server relative url or it is absolute then we're good to go,
+                // otherwise we need to add the server relative url in front of the folder path
+                string s when s.StartsWith(webServerRelativeUrl, StringComparison.OrdinalIgnoreCase)
+                    || s.StartsWith("https://", StringComparison.OrdinalIgnoreCase) => folderPath,
+                _ => $"{await GetServerRelativeUrlAsync(parentList).ConfigureAwait(false)}/{folderPath.TrimStart('/')}"
+            };
+            return UrlUtility.EnsureAbsoluteUrl(parentList.PnPContext.Web.Url, decodedUrlFolderPath).ToString();
+        }
+
+        private static async Task<string> GetServerRelativeUrlAsync(List parentList)
+        {
+            await parentList.EnsurePropertiesAsync(p => p.RootFolder).ConfigureAwait(false);
+            var serverRelativeUrl = parentList.RootFolder.ServerRelativeUrl;
+            return serverRelativeUrl;
         }
         #endregion
 
@@ -449,11 +491,10 @@ namespace PnP.Core.Model.SharePoint
             ApiCall apiCall = new ApiCall($"{GetItemUri()}?$select=ContentTypeId,FileDirRef,FileRef", ApiType.SPORest);
             await RequestAsync(apiCall, HttpMethod.Get).ConfigureAwait(false);
         }
-        
+
         #endregion
 
-        #region Item updates
-
+        #region Item updates        
         internal override async Task BaseUpdate(Func<FromJson, object> fromJsonCasting = null, Action<string> postMappingJson = null)
         {
             // Get entity information for the entity to update
@@ -463,8 +504,19 @@ namespace PnP.Core.Model.SharePoint
 
             // Add the request to the batch and execute the batch
             var batch = PnPContext.BatchClient.EnsureBatch();
-            batch.Add(this, entityInfo, HttpMethod.Post, api, default, null, null, "Update");
-            await PnPContext.BatchClient.ExecuteBatch(batch).ConfigureAwait(false);
+
+            try
+            {
+                this.WithModule(handleUpdateExceptionsModule);
+
+                batch.Add(this, entityInfo, HttpMethod.Post, api, default, null, null, "Update");
+                await PnPContext.BatchClient.ExecuteBatch(batch).ConfigureAwait(false);
+            }
+            finally
+            {
+                // Ensure the module get's removed again as this one only applies to this update request
+                PnPContext.RequestModules?.Remove(handleUpdateExceptionsModule);
+            }
         }
 
 
@@ -475,8 +527,17 @@ namespace PnP.Core.Model.SharePoint
 
             var api = await BuildUpdateApiCallAsync(PnPContext).ConfigureAwait(false);
 
-            // Add the request to the batch
-            batch.Add(this, entityInfo, HttpMethod.Post, api, default, null, null, "UpdateBatch");
+            try
+            {
+                this.WithModule(handleUpdateExceptionsModule);
+                // Add the request to the batch
+                batch.Add(this, entityInfo, HttpMethod.Post, api, default, null, null, "UpdateBatch");
+            }
+            finally
+            {
+                // Ensure the module get's removed again as this one only applies to this update request
+                PnPContext.RequestModules?.Remove(handleUpdateExceptionsModule);
+            }
         }
 
         private async Task<ApiCall> BuildUpdateApiCallAsync(PnPContext context)
@@ -1677,7 +1738,7 @@ namespace PnP.Core.Model.SharePoint
                 itemApi = "_api/web/lists(guid'{List.Id}')/getitembyid({Id})";
             }
 
-            var apiCall = new ApiCall($"{itemApi}/getcomments", ApiType.SPORest, receivingProperty: nameof(Comments));
+            var apiCall = new ApiCall($"{itemApi}/getcomments", ApiType.SPORest, receivingProperty: nameof(Comments), loadPages: true);
             if (selectors != null && selectors.Any())
             {
                 // Use the query client to translate the seletors into the needed query string
@@ -1690,8 +1751,8 @@ namespace PnP.Core.Model.SharePoint
                 };
 
                 var entityInfo = EntityManager.GetClassInfo(tempComment.GetType(), tempComment, expressions: selectors);
-                var query = await QueryClient.BuildGetAPICallAsync(tempComment, entityInfo, apiCall).ConfigureAwait(false);
-                return new ApiCall(query.ApiCall.Request, ApiType.SPORest, receivingProperty: nameof(Comments));
+                var query = await QueryClient.BuildGetAPICallAsync(tempComment, entityInfo, apiCall, loadPages:true).ConfigureAwait(false);
+                return new ApiCall(query.ApiCall.Request, ApiType.SPORest, receivingProperty: nameof(Comments), loadPages: true);
             }
             else
             {
@@ -1765,7 +1826,10 @@ namespace PnP.Core.Model.SharePoint
 
         private ApiCall BuildGetUserEffectivePermissionsApiCall(string userPrincipalName, Guid parentListId)
         {
-            return new ApiCall($"_api/web/lists(guid'{parentListId}')/items({Id})/getusereffectivepermissions('{HttpUtility.UrlEncode("i:0#.f|membership|")}{userPrincipalName}')", ApiType.SPORest);
+            return new ApiCall($"_api/web/lists(guid'{parentListId}')/items({Id})/getusereffectivepermissions('{HttpUtility.UrlEncode("i:0#.f|membership|")}{userPrincipalName}')", ApiType.SPORest)
+            {
+                SkipCollectionClearing = true
+            };
         }
 
         public bool CheckIfUserHasPermissions(string userPrincipalName, PermissionKind permissionKind)

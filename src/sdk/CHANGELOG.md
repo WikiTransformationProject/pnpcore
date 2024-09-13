@@ -6,6 +6,109 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/).
 
+## [1.14]
+
+### Added
+
+### Changed
+
+- Added ExpirationDataTime to OrganizationLinkOptions #1494 [reshmee011 - Reshmee Auckloo]
+- Update CloudManager.cs for GCC Login URL Fix #1502 [SteveWinward - Steve Winward]
+- Updated pages API to support the new page header model via full width page header web part #1506 [czullu - Christian Zuellig]
+- Bump System.Text.Json versions [jansenbe - Bert Jansen]
+
+## [1.13]
+
+### Added
+
+- Improved support for reading 'Image' and 'Location' fields #1411 [wizofaus - Dylan Nicholson]
+- Support for setting 'Image' and 'Location' fields [jansenbe - Bert Jansen]
+- Added xxxClientSideComponentId and xxxFormClientSideComponentProperties properties for `IContentType` #1421 [jansenbe - Bert Jansen]
+- Allow access to SharePoint and Microsoft Graph response headers for interactive/batch requests, including the `SPRequestGuid` (=correlation id) and Microsoft Graph `request-id` [jansenbe - Bert Jansen]
+- Allow access to the SPRequest Guid via the returned `BatchRequest` #1464 [StefanSchoof - Stefan Schoof]
+- Support for `UseSharedCache` in the `OnBehalfOfAuthenticationProvider` #1380 [jansenbe - Bert Jansen]
+
+### Changed
+
+- Calls to `GetUserEffectivePermissions` are not not clearing collections loaded in the used `PnPContext` instance #1416 [jansenbe - Bert Jansen]
+- Verify TermId is a valid GUID before assigning it #1414 [jansenbe - Bert Jansen]
+- Loading site pages is more robust when a custom web part on the page is erroring #1410 [jansenbe - Bert Jansen]
+- `IContentType.SchemaXml` is not settable in SharePoint so removing the set option for it #1418 [jansenbe - Bert Jansen]
+- Ensure `GetFolderByServerRelativeUrl` and `GetFileByServerRelativeUrl` can handle \ as path separator #1412 [jansenbe - Bert Jansen]
+- GetComments() with a selector only return maximum of 30 comments #1424 [jansenbe - Bert Jansen]
+- `CheckIn` and `Approve` methods on `IFile` now support comments with special characters like cariage returns #1432 [jansenbe - Bert Jansen]
+- `Update` methods on `IListItem` now handle validation errors similar to the `Add` methods #1433 [jansenbe - Bert Jansen]
+- Admin library: Improved support for vanity URL tenants when loading ACS principals and SharePoint Add-Ins [jansenbe - Bert Jansen]
+- Admin library: Azure ACS principal with only tenant level permissions that are created from running appinv.aspx for an "regular" Entra application are now correclty detected [jansenbe - Bert Jansen]
+- Bumped version of Microsoft.Identity.Client package version to 4.60.3 #1447 [gautamdsheth - Gautam Sheth]
+- Correctly process empty batch responses #1463 [StefanSchoof - Stefan Schoof]
+- CSOM execution flow now also processes post request modules [jansenbe - Bert Jansen]
+- Added specialization support when adding a Team to a group #1468 [danielpastoor - Daniel Pastoor]
+- Add better support for the Visibility HiddenMembership and added additionaldata support for creating a Group #1467 [danielpastoor - Daniel Pastoor]
+- Admin libray: Fixed paging when loading sites using Graph search [jansenbe - Bert Jansen]
+
+## [1.12.0]
+
+### Added
+
+- Add `Groups` property to `ISharePointUser` #1363 [jansenbe - Bert Jansen]
+- Added `DeleteAll`, `DeleteByID`, `DeleteByLabel`, `RecycleByID`, `RecycleByLabel` and `RestoreByLabel` methods for `IFileVersionCollection` #1375 [jansenbe - Bert Jansen]
+
+### Changed
+
+- Admin library: added support to specify the timezone when creating a site collection #1334 [kfircs - Kfir Chen]
+- Auth library: default access token retrieval log message to `debug` instead of `information` #1328 [jansenbe - Bert Jansen]
+- Viva Announcement Library resulted in two `pages` libaries breaking the page library detection logic #1343 [jansenbe - Bert Jansen]
+- Fix LookupValue handling for FromListDataAsStream in UserMulti field type #1348 [eduardpaul - Eduard Paul]
+- Fix adding Events (=calendar) list items when Events list was created at site root versus under /lists #1349 [jansenbe - Bert Jansen]
+- Added missing members to "IPnPContext" to improve testability #1351 [fzbm - Florian Zink]
+- Upgrade to version 6.35.0 of System.IdentityModel.Tokens.Jwt [jansenbe - Bert Jansen]
+- GetWssIdForTermAsync returns wrong WssId if used multiple times on the same PnPContext instance #1355 [jansenbe - Bert Jansen]
+- ViewType2 updating error #1360 [jansenbe - Bert Jansen]
+- Improved approach for getting the listitem folderpath #1353 [4ndri - Andri Capol]
+- Ensure the finishupload endpoint is always called #1387 [alexchx - Alex Chen]
+- Admin library: Add code to set sensitivity label to a group via updating associated site properties #1389 [wilecoyotegenius - Konrad K.]
+- Expose the `BatchRequest.Id` property and include it in the corresponding `BatchResponse` to enable more advanced batch handling scenarios #1374 [jansenbe - Bert Jansen]
+- Admin library: fixed issues with loading SharePoint Add-In and Azure ACS principal permissions when the payload exceeded 500 items [jansenbe - Bert Jansen]
+- GetUserEffectivePermissions not working with External accounts #1350 [jansenbe - Bert Jansen]
+- GetComments() only return maximum of 30 comments. It used to return all comments. #1361 [jansenbe - Bert Jansen]
+- Improved testability by removing type checking in `QueryableExtensions.AsRequested` #1376 [jansenbe - Bert Jansen]
+- `IListItem` like (`ILikedByInformation`) was not always loaded #1395 [jansenbe - Bert Jansen]
+- Performance: `PnPContext` initialization can be done with a single roundtrip to SharePoint if the valid site casing is used in combination with `PnPContextOptions.SiteUriCasingIsCorrect` #1383 [jansenbe - Bert Jansen]
+- BREAKING CHANGE: `ITeamChannelTab.Id` now is of type `string` instead of `Guid` #1407 [jansenbe - Bert Jansen]
+
+## [1.11.0]
+
+### Added
+
+- Support for using the `ILongRunningOperation` interface to track the progress of long running operations #1245 [JakeStanger - Jake Stanger]
+- Option to invoke external access provider asynchronously when using the `ExternalAuthenticationProvider` authentication provider #1269 [quails4Eva - David Petchey]
+- Support for .NET 8.0 [jansenbe - Bert Jansen]
+
+### Changed
+
+- Fixed Graph paging for US Government, Germany and China clouds + removed some hardcoded references to graph.microsoft.com [jansenbe - Bert Jansen]
+- Admin library: Group connected team sites use the Microsoft Graph api for both application and delegated permissions #1220 [danielpastoor - Daniel Pastoor]
+- Added Poland to the `GeoLocation` enum #1232 [jansenbe - Bert Jansen]
+- Fix issue to enumerate private/shared channel sites #1238 [valpvt]
+- Removed `ExcludedBlockDownloadGroupIds` properties from `ISiteCollectionProperties` as that prevented unlocking a site collection via the `LockState` property #1251 [jansenbe - Bert Jansen]
+- Upload of large files (chunked upload) also uses the `addusingpath` method, just like the regular upload #1256 [jansenbe - Bert Jansen]
+- Added `IList.DefaultItemOpenInBrowser` property #1248 [jansenbe - Bert Jansen]
+- Calling `LoadAsync` or `EnsurePropertiesAsync` on `IFolder` was broken #1236 [jansenbe - Bert Jansen]
+- Fixed the encoding of `IPropertyValues` (property bag) values when any of these chars was used in the property name: -./:<>|[] #1263 [jansenbe - Bert Jansen]
+- Currently only support getting `SensitivityLabelId` on `ISite` [jansenbe - Bert Jansen]
+- Admin library: Fixed issues with loading SharePoint Add-Ins [jansenbe - Bert Jansen]
+- Admin library: Extra parameters to configure the SharePoint Add-In and Azure ACS principal loading [jansenbe - Bert Jansen]
+- Changed `IList.DraftVersionVisibility` to use enum `DraftVisibilityType` instead of an `int` #1286 [jansenbe - Bert Jansen]
+- Fixing URL too long issue when downloading files #1290 [koenzomers - Koen Zomers]
+- Fixed regression coming from #1290 #1297 [jansenbe - Bert Jansen]
+- Admin library: switched to the new multi-geo aware site enumaration endpoint [jansenbe - Bert Jansen]
+- Fixed `LoadListDataAsStream` paging issue when item count was a multiple of the page size #1296 [jansenbe - Bert Jansen]
+- Made it easier to set a `IField` internal name [jansenbe - Bert Jansen]
+- Leave 'Teamify' loop when Team already existed #1319 [jansenbe - Bert Jansen]
+- Fixed 'hot reload' warning when debugging [jansenbe - Bert Jansen]
+- Fix setting site collection admins for groupified sites #1323 [mloitzl - Martin Loitzl]
+
 ## [1.10.0]
 
 ### Added

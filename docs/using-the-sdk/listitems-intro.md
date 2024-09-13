@@ -115,7 +115,7 @@ var myList = context.Web.Lists.GetByTitle("My List", p => p.Title,
 // Do a paged retrieval (non async sample) of the list items with additional collection loads
 foreach(var listItem in myList.Items.QueryProperties(p => p.All,
                                      p => p.RoleAssignments.QueryProperties(p => p.PrincipalId, 
-                                                                           p => p.RoleDefinitions))
+                                                                            p => p.RoleDefinitions))
 {
     // Do something with the list item
     if (listItem["MyStatus"].ToString() == "Pending")
@@ -158,8 +158,8 @@ string viewXml = @"<View>
                           <Value Type='text'><![CDATA[Item1]]</Value>
                         </BeginsWith>
                       </Where>
+                      <OrderBy Override='TRUE'><FieldRef Name='ID' Ascending='FALSE' /></OrderBy>
                     </Query>
-                    <OrderBy Override='TRUE'><FieldRef Name= 'ID' Ascending= 'FALSE' /></OrderBy>
                    </View>";
 
 // Execute the query
@@ -180,6 +180,7 @@ foreach (var listItem in myList.Items.AsRequested())
 > [!Note]
 >
 > - When referencing a field keep in mind that you need to use the field's `InternalName`. If you've created a field with name `Version Tag` then the `InternalName` will be `Version_x0020_Tag`, so you will be using `myItem["Version_x0020_Tag"]` to work with the field.
+> - When you want to reuse a `PnPContext` which you've previously used to load items you first need to clear the loaded items via `myList.Items.Clear()`
 > - When referencing a field ensure to use the correct field name casing: `version_x0020_tag` is not the same as `Version_x0020_Tag`.
 > - Filtering on the `HasUniqueRoleAssignments` field is not allowed by SharePoint.
 > - When using `text` fields in a CAML query is recommended to escape the text field value to ensure the query does not break. Escaping should be done using `<![CDATA[{MyVariable}]]`
@@ -214,10 +215,10 @@ string viewXml = @$"<View>
             <Value Type='Integer'>0</Value>
         </Eq>
         </Where>
+        <OrderBy Override='TRUE'><FieldRef Name='ID' Ascending='FALSE' /></OrderBy>
     </Query>
-    <OrderBy Override='TRUE'><FieldRef Name= 'ID' Ascending= 'FALSE' /></OrderBy>
     <RowLimit>{pageSize}</RowLimit>
-    </View>";
+</View>";
 
 // Load all the needed data using paged requests
 bool paging = true;
@@ -336,8 +337,8 @@ string viewXml = @"<View>
                           <Value Type='text'>![CDATA[Item1]]</Value>
                         </BeginsWith>
                       </Where>
+                      <OrderBy Override='TRUE'><FieldRef Name='ID' Ascending='FALSE' /></OrderBy>
                     </Query>
-                    <OrderBy Override='TRUE'><FieldRef Name= 'ID' Ascending= 'FALSE' /></OrderBy>
                     <RowLimit>5</RowLimit>
                    </View>";
 
@@ -360,6 +361,7 @@ foreach (var listItem in myList.Items.AsRequested())
 > [!Note]
 >
 > - When referencing a field keep in mind that you need to use the field's `InternalName`. If you've created a field with name `Version Tag` then the `InternalName` will be `Version_x0020_Tag`, so you will be using `myItem["Version_x0020_Tag"]` to work with the field.
+> - When you want to reuse a `PnPContext` which you've previously used to load items you first need to clear the loaded items via `myList.Items.Clear()`
 > - When referencing a field ensure to use the correct field name casing: `version_x0020_tag` is not the same as `Version_x0020_Tag`.
 > - Filtering on the `HasUniqueRoleAssignments` field is not allowed by SharePoint.
 > - When using `text` fields in a CAML query is recommended to escape the text field value to ensure the query does not break. Escaping should be done using `<![CDATA[{MyVariable}]]`
@@ -389,8 +391,8 @@ string viewXml = @"<View>
                           <Value Type='text'>![CDATA[Item1]]</Value>
                         </BeginsWith>
                       </Where>
+                      <OrderBy Override='TRUE'><FieldRef Name='ID' Ascending='FALSE' /></OrderBy>
                     </Query>
-                    <OrderBy Override='TRUE'><FieldRef Name= 'ID' Ascending= 'FALSE' /></OrderBy>
                     <RowLimit Paged='TRUE'>20</RowLimit>
                    </View>";
 
@@ -509,7 +511,7 @@ Updating a list item comes down to updating the field values followed by calling
 
 Methods | Description
 --------|------------
-Update, UpdateAsync | Regular update, this will result in a new version being created and the modified and editor list item fields will be updated
+Update, UpdateAsync | Regular update, this will result in a new version being created and the modified and editor list item fields will be updated. When updating fields in a document library the update might silently fail when the field value exceeds 255 characters. If so, please use one of the other methods in this table.
 SystemUpdate, SystemUpdateAsync | Updates the item without creating a new version and without updating the modified and editor list item fields
 UpdateOverWriteVersion, UpdateOverWriteVersionAsync | Updates the item without creating a new version and the modified and editor list item fields will be updated
 
@@ -605,7 +607,7 @@ await context.ExecuteAsync();
 
 To add a folder to a list the list first must be configured to allow content types (`ContentTypesEnabled`) and allow folders (`EnableFolderCreation`). Once that's done use one of the `AddListFolder` methods to add a folder.
 
-``` csharp
+```csharp
 list.ContentTypesEnabled = true;
 list.EnableFolderCreation = true;
 await list.UpdateAsync();

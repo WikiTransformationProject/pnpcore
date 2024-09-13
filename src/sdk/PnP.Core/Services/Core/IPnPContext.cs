@@ -120,6 +120,24 @@ namespace PnP.Core.Services
         bool HasPendingRequests { get; }
 
         /// <summary>
+        /// Current batch, used for implicit batching
+        /// </summary>
+        Batch CurrentBatch { get; }
+
+        /// <summary>
+        /// Creates a new batch
+        /// </summary>
+        /// <returns>A new <see cref="Batch"/> instance for batching.</returns>
+        Batch NewBatch();
+
+        /// <summary>
+        /// Gets an ongoing Graph long-running operation.
+        /// </summary>
+        /// <param name="location">The location of the operation</param>
+        /// <returns>An <see cref="ILongRunningOperation"/> associated with the location</returns>
+        ILongRunningOperation GetLongRunningOperation(string location);
+
+        /// <summary>
         /// Method to execute the current batch
         /// </summary>
         /// <param name="throwOnError">Throw an exception on the first encountered error in the batch</param>

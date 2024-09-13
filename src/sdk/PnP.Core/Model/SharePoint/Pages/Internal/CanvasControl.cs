@@ -357,7 +357,7 @@ namespace PnP.Core.Model.SharePoint
         #endregion
 
         #region Internal and private methods
-        public virtual void FromHtml(IElement element)
+        public virtual void FromHtml(IElement element, bool isHeader)
         {
             var controlData = JsonSerializer.Deserialize<CanvasControlData>(element.GetAttribute(ControlDataAttribute), PnPConstants.JsonSerializer_IgnoreNullValues);
 

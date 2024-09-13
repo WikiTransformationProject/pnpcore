@@ -445,8 +445,9 @@ namespace PnP.Core.Model.SharePoint
         {
             // NOTE WebUtility encode spaces to "+" instead of %20
             // Replace %20 by space as otherwise %20 gets encoded as %2520 which will break the API request
-            string encodedServerRelativeUrl = WebUtility.UrlEncode(serverRelativeUrl.Replace("'", "''").Replace("%20", " ")).Replace("+", "%20");
-            var apiCall = new ApiCall($"_api/Web/getFolderByServerRelativePath(decodedUrl='{encodedServerRelativeUrl}')", ApiType.SPORest);
+            // When using the "parameter" model (@u) the server relative URL has to be specified using /, using \ only works in the non parameterized version (#1412)
+            string encodedServerRelativeUrl = WebUtility.UrlEncode(serverRelativeUrl.Replace("'", "''").Replace("%20", " ").Replace("\\", "/")).Replace("+", "%20");
+            var apiCall = new ApiCall($"_api/Web/getFolderByServerRelativePath(decodedUrl=@u)?@u='{encodedServerRelativeUrl}'", ApiType.SPORest);
             return apiCall;
         }
         #endregion
@@ -584,8 +585,9 @@ namespace PnP.Core.Model.SharePoint
         {
             // NOTE WebUtility encode spaces to "+" instead of %20
             // Replace %20 by space as otherwise %20 gets encoded as %2520 which will break the API request
-            string encodedServerRelativeUrl = WebUtility.UrlEncode(serverRelativeUrl.Replace("'", "''").Replace("%20", " ")).Replace("+", "%20");
-            var apiCall = new ApiCall($"_api/Web/getFileByServerRelativePath(decodedUrl='{encodedServerRelativeUrl}')", ApiType.SPORest);
+            // When using the "parameter" model (@u) the server relative URL has to be specified using /, using \ only works in the non parameterized version (#1412)
+            string encodedServerRelativeUrl = WebUtility.UrlEncode(serverRelativeUrl.Replace("'", "''").Replace("%20", " ").Replace("\\", "/")).Replace("+", "%20");
+            var apiCall = new ApiCall($"_api/Web/getFileByServerRelativePath(decodedUrl=@u)?@u='{encodedServerRelativeUrl}'", ApiType.SPORest);
             return apiCall;
         }
 
@@ -2334,6 +2336,10 @@ namespace PnP.Core.Model.SharePoint
                 DatesInUtc = true,
             };
 
+            // Clear the cached item from previous runs
+            TaxonomyHiddenList.Items.Clear();
+
+            // Fetch the item
             await TaxonomyHiddenList.LoadItemsByCamlQueryAsync(camlQuery).ConfigureAwait(false);
             var items = TaxonomyHiddenList.Items.AsRequested();
 
@@ -2382,7 +2388,10 @@ namespace PnP.Core.Model.SharePoint
 
         private static ApiCall BuildGetUserEffectivePermissionsApiCall(string userPrincipalName)
         {
-            return new ApiCall($"_api/web/getusereffectivepermissions('{HttpUtility.UrlEncode("i:0#.f|membership|")}{userPrincipalName}')", ApiType.SPORest);
+            return new ApiCall($"_api/web/getusereffectivepermissions('{HttpUtility.UrlEncode("i:0#.f|membership|" + userPrincipalName)}')", ApiType.SPORest)
+            {
+                SkipCollectionClearing = true
+            };
         }
 
         public bool CheckIfUserHasPermissions(string userPrincipalName, PermissionKind permissionKind)

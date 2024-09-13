@@ -431,7 +431,7 @@ namespace PnP.Core.Test.SharePoint
                 {
                     var web = await context.Web.GetAsync(p => p.AllProperties);
 
-                    var propertyKey = "With SpaceAnd_Underscore";
+                    var propertyKey = "With SpacePlus_-./:<>|[]";
                     var myProperty = web.AllProperties.GetInteger(propertyKey, 0);
                     if (myProperty == 0)
                     {
@@ -1405,6 +1405,22 @@ namespace PnP.Core.Test.SharePoint
         }
 
         [TestMethod]
+        public async Task GetByServerRelativeSeparatorEncoding()
+        {
+            //TestCommon.Instance.Mocking = false;
+            using (var context = await TestCommon.Instance.GetContextAsync(TestCommon.TestSite))
+            {
+                string sharedDocumentsFolderUrl = $"{context.Uri.PathAndQuery}/Shared Documents";
+                IFolder sharedDocumentsFolder = await context.Web.GetFolderByServerRelativeUrlAsync(sharedDocumentsFolderUrl);
+                Assert.IsNotNull(sharedDocumentsFolder);
+
+                sharedDocumentsFolderUrl = $"{context.Uri.PathAndQuery.Replace("/", "\\")}\\Shared Documents";
+                sharedDocumentsFolder = await context.Web.GetFolderByServerRelativeUrlAsync(sharedDocumentsFolderUrl);
+                Assert.IsNotNull(sharedDocumentsFolder);
+            }
+        }
+
+        [TestMethod]
         public async Task GetWebChangesAsyncTest()
         {
             //TestCommon.Instance.Mocking = false;
@@ -2239,6 +2255,17 @@ namespace PnP.Core.Test.SharePoint
             }
         }
 
+        [TestMethod]
+        public async Task GetEffectiveExternalUserPermissionsAsyncTest()
+        {
+            //TestCommon.Instance.Mocking = false;
+            using (var context = await TestCommon.Instance.GetContextAsync(TestCommon.TestSite))
+            {
+                var basePermissions = await context.Web.GetUserEffectivePermissionsAsync("bjansen_microsoft.com#ext#@bertonline.onmicrosoft.com");
+
+                Assert.IsNotNull(basePermissions);
+            }
+        }
 
         [TestMethod]
         public async Task CheckIfUserHasPermissionsAsyncTest()

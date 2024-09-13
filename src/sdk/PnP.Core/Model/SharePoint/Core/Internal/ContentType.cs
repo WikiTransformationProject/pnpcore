@@ -171,6 +171,18 @@ namespace PnP.Core.Model.SharePoint
 
         public bool Sealed { get => GetValue<bool>(); set => SetValue(value); }
 
+        public string NewFormClientSideComponentId { get => GetValue<string>(); set => SetValue(value); }
+
+        public string NewFormClientSideComponentProperties { get => GetValue<string>(); set => SetValue(value); }
+
+        public string EditFormClientSideComponentId { get => GetValue<string>(); set => SetValue(value); }
+
+        public string EditFormClientSideComponentProperties { get => GetValue<string>(); set => SetValue(value); }
+
+        public string DisplayFormClientSideComponentId { get => GetValue<string>(); set => SetValue(value); }
+
+        public string DisplayFormClientSideComponentProperties { get => GetValue<string>(); set => SetValue(value); }
+
         public IFieldLinkCollection FieldLinks { get => GetModelCollectionValue<IFieldLinkCollection>(); }
 
         public IFieldCollection Fields { get => GetModelCollectionValue<IFieldCollection>(); }
@@ -428,7 +440,7 @@ namespace PnP.Core.Model.SharePoint
 
             dynamic body = new ExpandoObject();
 
-            ((IDictionary<string, object>)body)["sourceColumn@odata.bind"] = $"https://graph.microsoft.com/v1.0/sites/{siteId}/columns/{field.Id}";
+            ((IDictionary<string, object>)body)["sourceColumn@odata.bind"] = $"{CloudManager.GetGraphBaseUrl(PnPContext)}v1.0/sites/{siteId}/columns/{field.Id}";
 
             return new ApiCall(requestUrl, ApiType.Graph, jsonBody: JsonSerializer.Serialize(body, typeof(ExpandoObject), PnPConstants.JsonSerializer_IgnoreNullValues_CamelCase));
         }

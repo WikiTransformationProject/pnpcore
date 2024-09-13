@@ -168,9 +168,9 @@ namespace PnP.Core.Model.SharePoint
         #endregion
 
         #region Internal and private methods
-        public override void FromHtml(IElement element)
+        public override void FromHtml(IElement element, bool isHeader)
         {
-            base.FromHtml(element);
+            base.FromHtml(element, isHeader);
 
             var div = element.GetElementsByTagName("div").FirstOrDefault(a => a.HasAttribute(TextRteAttribute));
 

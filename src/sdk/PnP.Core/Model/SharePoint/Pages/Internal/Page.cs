@@ -508,11 +508,18 @@ namespace PnP.Core.Model.SharePoint
                         // The site pages library has the CanvasContent1 column, using that to distinguish between Site Pages and other wiki page libraries
                         if (list.IsPropertyAvailable(p => p.Fields) && list.Fields.AsRequested().FirstOrDefault(p => p.InternalName == "CanvasContent1") != null)
                         {
-                            if (list.ArePropertiesAvailable(getPagesLibraryExpression))
+                            // Verify this is the "real" pages library, sites supporting Viva Connections have a second pages library (named Announcements) used to
+                            // store Viva Connections announcements
+                            if (list.IsPropertyAvailable(p => p.ListItemEntityTypeFullName) && list.ListItemEntityTypeFullName == "SP.Data.SitePagesItem")
                             {
-                                pagesLibrary = list;
+                                if (list.ArePropertiesAvailable(getPagesLibraryExpression))
+                                {
+                                    pagesLibrary = list;
+                                }
+
+                                // As there's only one real pages library we can bail out now
+                                break;
                             }
-                            break;
                         }
                     }
                 }
@@ -534,7 +541,11 @@ namespace PnP.Core.Model.SharePoint
                 {
                     foreach (var list in libraries)
                     {
-                        if (list.IsPropertyAvailable(p => p.Fields) && list.Fields.AsRequested().FirstOrDefault(p => p.InternalName == "CanvasContent1") != null)
+                        if (list.IsPropertyAvailable(p => p.Fields) && 
+                            list.Fields.AsRequested().FirstOrDefault(p => p.InternalName == "CanvasContent1") != null &&
+                            // Verify this is the "real" pages library, sites supporting Viva Connections have a second pages library (named Announcements) used to
+                            // store Viva Connections announcements
+                            list.ListItemEntityTypeFullName == "SP.Data.SitePagesItem")
                         {
                             pagesLibrary = list;
                             break;
@@ -953,6 +964,14 @@ namespace PnP.Core.Model.SharePoint
             };
         }
 
+        /// <summary>
+        /// Sets page header back to the default for PageTilte WebPart (Message ID: MC791596 / Roadmap ID: 386904). The PageTitle WebPart has to be added into a first OneColumnFullWith Section separate.
+        /// </summary>
+        public void SetPageTitleWebPartPageHeader()
+        {
+            pageHeader = new PageHeader(PnPContext, PageHeaderType.PageTitleWebPart, null);
+        }
+
         #endregion
 
         #region To Html
@@ -1185,7 +1204,7 @@ namespace PnP.Core.Model.SharePoint
         {
             if (string.IsNullOrEmpty(html))
             {
-                throw new ArgumentNullException(nameof(pageHeaderHtml));
+                throw new ArgumentNullException(nameof(html));
             }
 
             HtmlParser parser = new HtmlParser(new HtmlParserOptions() { IsEmbedded = true });
@@ -1209,7 +1228,7 @@ namespace PnP.Core.Model.SharePoint
                         {
                             Order = controlOrder
                         };
-                        control.FromHtml(clientSideControl);
+                        control.FromHtml(clientSideControl, false);
 
                         // Handle control positioning in sections and columns
                         ApplySectionAndColumn(control, control.SpControlData.Position, control.SpControlData.Emphasis, control.SpControlData.ZoneGroupMetadata);
@@ -1222,7 +1241,7 @@ namespace PnP.Core.Model.SharePoint
                         {
                             Order = controlOrder
                         };
-                        control.FromHtml(clientSideControl);
+                        control.FromHtml(clientSideControl, false);
 
                         // Handle control positioning in sections and columns
                         ApplySectionAndColumn(control, control.SpControlData.Position, control.SpControlData.Emphasis, control.SpControlData.ZoneGroupMetadata);
@@ -1450,6 +1469,13 @@ namespace PnP.Core.Model.SharePoint
             // Reindex the control order. We're starting control order from 1 for each column.
             ReIndex();
 
+            var hasPageTitleWPInOneColumFullWith = false;
+            if (sections.Count != 0 && sections.First().Type == CanvasSectionTemplate.OneColumnFullWidth &&
+                sections.First().Controls.Any(c => (c as PageWebPart)?.WebPartId?.Equals("cbe7b0a9-3504-44dd-a3a3-0e5cacd07788") == true))
+            {
+                hasPageTitleWPInOneColumFullWith = true; //Message ID: MC791596 / Roadmap ID: 386904
+            }
+
             // Load page header controls. Microsoft Syntex Topic pages do have 5 controls in the header (= controls that cannot be moved)
             if (LayoutType == PageLayoutType.Topic || LayoutType == PageLayoutType.NewsDigest)
             {
@@ -1469,7 +1495,7 @@ namespace PnP.Core.Model.SharePoint
                             Order = headerControlOrder,
                             IsHeaderControl = true,
                         };
-                        control.FromHtml(clientSideHeaderControl);
+                        control.FromHtml(clientSideHeaderControl, true);
 
                         HeaderControls.Add(control);
                         headerControlOrder++;
@@ -1478,8 +1504,15 @@ namespace PnP.Core.Model.SharePoint
             }
             else
             {
-                // Load the page header
-                pageHeader.FromHtml(pageHeaderHtml);
+                if (hasPageTitleWPInOneColumFullWith)
+                {
+                    pageHeader = new PageHeader(PnPContext, PageHeaderType.PageTitleWebPart, null);
+                }
+                else
+                {
+                    // Load the page header
+                    pageHeader.FromHtml(pageHeaderHtml);
+                }
             }
         }
 
@@ -1665,12 +1698,21 @@ namespace PnP.Core.Model.SharePoint
             }
 
             var pageHeaderHtml = "";
-            if (pageHeader != null && pageHeader.Type != PageHeaderType.None && LayoutType != PageLayoutType.RepostPage
-                && LayoutType != PageLayoutType.Topic && LayoutType != PageLayoutType.NewsDigest)
+            if (pageHeader != null)
             {
-                // this triggers resolving of the header image which has to be done early as otherwise there will be version conflicts
-                // (see here: https://github.com/SharePoint/PnP-Sites-Core/issues/2203)
-                pageHeaderHtml = await pageHeader.ToHtmlAsync(PageTitle).ConfigureAwait(false);
+                if(pageHeader.Type == PageHeaderType.Default && sections.Any() && sections.First().Type == CanvasSectionTemplate.OneColumnFullWidth && sections.First().Controls.Any(c => (c as PageWebPart)?.WebPartId?.Equals("cbe7b0a9-3504-44dd-a3a3-0e5cacd07788") == true))
+                {
+                    //Page created from code and Header was not set
+                    SetPageTitleWebPartPageHeader();
+                }
+
+                if (pageHeader.Type != PageHeaderType.None && LayoutType != PageLayoutType.RepostPage
+                    && LayoutType != PageLayoutType.Topic && LayoutType != PageLayoutType.NewsDigest && pageHeader.Type != PageHeaderType.PageTitleWebPart)
+                {
+                    // this triggers resolving of the header image which has to be done early as otherwise there will be version conflicts
+                    // (see here: https://github.com/SharePoint/PnP-Sites-Core/issues/2203)
+                    pageHeaderHtml = await pageHeader.ToHtmlAsync(PageTitle).ConfigureAwait(false);
+                }
             }
 
             if (LayoutType == PageLayoutType.Topic || LayoutType == PageLayoutType.NewsDigest)
@@ -1883,7 +1925,14 @@ namespace PnP.Core.Model.SharePoint
             }
             else
             {
-                PageListItem[PageConstants.PageLayoutContentField] = pageHeaderHtml;
+                if (pageHeader.Type == PageHeaderType.PageTitleWebPart)
+                {
+                    PageListItem[PageConstants.PageLayoutContentField] = SharePoint.PageHeader.PageTitleWebPartHeader();
+                }
+                else
+                {
+                    PageListItem[PageConstants.PageLayoutContentField] = pageHeaderHtml;
+                }
 
                 // AuthorByline depends on a field holding the author values
                 var authorByLineIdField = PagesLibrary.Fields.AsRequested().FirstOrDefault(p => p.InternalName == PageConstants._AuthorByline);
@@ -2089,6 +2138,7 @@ namespace PnP.Core.Model.SharePoint
                 if (!PnPContext.Web.WebTemplate.Equals("SITEPAGEPUBLISHING", StringComparison.InvariantCultureIgnoreCase) &&
                     // we allow enabling communication site features on STS and EHS sites, so don't block adding full width sections on those sites
                     !PnPContext.Web.WebTemplate.Equals("STS", StringComparison.InvariantCultureIgnoreCase) &&
+                    !PnPContext.Web.WebTemplate.Equals("GROUP", StringComparison.InvariantCultureIgnoreCase) &&
                     !PnPContext.Web.WebTemplate.Equals("EHS", StringComparison.InvariantCultureIgnoreCase) &&
                     // SharePoint Syntex Content Center sites can also have full width sections
                     !PnPContext.Web.WebTemplate.Equals("CONTENTCTR", StringComparison.InvariantCultureIgnoreCase))
@@ -2542,7 +2592,7 @@ namespace PnP.Core.Model.SharePoint
             }
 
             // Already load the actual likes, assuming this will be needed in most cases and thus saving the roundtrip
-            return (await PageListItem.GetAsync(p => p.LikedByInformation.QueryProperties(p => p.LikeCount, p => p.IsLikedByUser, p => p.LikedBy)).ConfigureAwait(false)).LikedByInformation;
+            return (await PageListItem.LikedByInformation.GetAsync(p => p.LikeCount, p => p.IsLikedByUser, p => p.LikedBy).ConfigureAwait(false));            
         }
 
         public ILikedByInformation GetLikedByInformation()

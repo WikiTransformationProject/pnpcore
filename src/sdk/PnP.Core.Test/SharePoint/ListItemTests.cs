@@ -415,6 +415,158 @@ namespace PnP.Core.Test.SharePoint
             }
         }
 
+        [TestMethod]
+        public async Task UpdateWithWrongValuesInteractive()
+        {
+            //TestCommon.Instance.Mocking = false;
+            using (var context = await TestCommon.Instance.GetContextAsync(TestCommon.TestSite))
+            {
+                var listTitle = TestCommon.GetPnPSdkTestAssetName("UpdateWithWrongValuesInteractive");
+                IList myList = null;
+
+                try
+                {
+                    myList = context.Web.Lists.FirstOrDefault(p => p.Title == listTitle);
+
+                    if (myList == null)
+                    {
+                        // Create the list
+                        myList = await context.Web.Lists.AddAsync(listTitle, ListTemplateType.GenericList);
+
+                        IField myDateField = await myList.Fields.AddDateTimeAsync("MyDateField", new FieldDateTimeOptions
+                        {
+                            Group = "Custom Fields",
+                            AddToDefaultView = true,                            
+                        });
+
+                        // Add a list item to this list
+                        // Add a list item
+                        Dictionary<string, object> values = new Dictionary<string, object>
+                        {
+                            { "Title", "Yes" },
+                            { "MyDateField", DateTime.Now }
+                        };
+                        await myList.Items.AddAsync(values);
+                    }
+                    else
+                    {
+                        Assert.Inconclusive("Test data set should be setup to not have the list available.");
+                    }
+
+                    if (myList != null)
+                    {
+                        // get items from the list
+                        await myList.LoadAsync(p => p.Items);
+
+                        // grab first item
+                        var firstItem = myList.Items.AsRequested().FirstOrDefault();
+                        if (firstItem != null)
+                        {
+                            firstItem.Values["Title"] = "No";
+                            firstItem.Values["MyDateField"] = "2024-33-33";
+
+                            await Assert.ThrowsExceptionAsync<SharePointRestServiceException>(async () =>
+                            {
+                                await firstItem.UpdateAsync();
+                            });
+                        }
+                    }
+                }
+                finally
+                {
+                    // Clean up
+                    await myList.DeleteAsync();
+                }
+            }
+        }
+
+        [TestMethod]
+        public async Task UpdateWithWrongValuesInteractiveBatch()
+        {
+            //TestCommon.Instance.Mocking = false;
+            using (var context = await TestCommon.Instance.GetContextAsync(TestCommon.TestSite))
+            {
+                var listTitle = TestCommon.GetPnPSdkTestAssetName("UpdateWithWrongValuesInteractiveBatch");
+                IList myList = null;
+
+                try
+                {
+                    myList = context.Web.Lists.FirstOrDefault(p => p.Title == listTitle);
+
+                    if (myList == null)
+                    {
+                        // Create the list
+                        myList = await context.Web.Lists.AddAsync(listTitle, ListTemplateType.GenericList);
+
+                        IField myDateField = await myList.Fields.AddDateTimeAsync("MyDateField", new FieldDateTimeOptions
+                        {
+                            Group = "Custom Fields",
+                            AddToDefaultView = true,
+                        });
+
+                        // Add a list item to this list
+                        // Add a list item
+                        Dictionary<string, object> values = new Dictionary<string, object>
+                        {
+                            { "Title", "Yes" },
+                            { "MyDateField", DateTime.Now }
+                        };
+                        await myList.Items.AddAsync(values);
+                    }
+                    else
+                    {
+                        Assert.Inconclusive("Test data set should be setup to not have the list available.");
+                    }
+
+                    if (myList != null)
+                    {
+                        // get items from the list
+                        await myList.LoadAsync(p => p.Items);
+
+                        // grab first item
+                        var firstItem = myList.Items.AsRequested().FirstOrDefault();
+                        if (firstItem != null)
+                        {
+                            firstItem.Values["Title"] = "No";
+                            firstItem.Values["MyDateField"] = "2024-33-33";
+                            
+                            var batch = context.NewBatch();
+                            await firstItem.UpdateBatchAsync(batch);
+
+                            var batchResults = await context.ExecuteAsync(batch, false);
+
+                            Assert.IsTrue(batchResults.Count == 1);
+                        }
+
+                        // get items from the list
+                        await myList.LoadAsync(p => p.Items);
+
+                        // grab first item
+                        firstItem = myList.Items.AsRequested().FirstOrDefault();
+                        if (firstItem != null)
+                        {
+                            firstItem.Values["Title"] = "No";
+                            firstItem.Values["MyDateField"] = "2024-33-33";
+
+                            var batch = context.NewBatch();
+                            await firstItem.UpdateBatchAsync(batch);
+
+                            await Assert.ThrowsExceptionAsync<SharePointRestServiceException>(async () =>
+                            {
+                                var batchResults = await context.ExecuteAsync(batch);
+                            });
+                        }
+
+                    }
+                }
+                finally
+                {
+                    // Clean up
+                    await myList.DeleteAsync();
+                }
+            }
+        }
+
 
         [TestMethod]
         public async Task VerifyUserFieldsInRepetiveUpdates()
@@ -1305,7 +1457,10 @@ namespace PnP.Core.Test.SharePoint
 
                 // Use the batch update flow here
                 var batch = context.NewBatch();
-                await first.UpdateOverwriteVersionBatchAsync(batch).ConfigureAwait(false);
+                // CSOM is used under the covers
+                await first.WithResponseHeaders((responseHeaders) => {
+                    Assert.IsTrue(!string.IsNullOrEmpty(responseHeaders["SPRequestGuid"]));
+                }).UpdateOverwriteVersionBatchAsync(batch).ConfigureAwait(false);
                 await context.ExecuteAsync(batch);
             }
             using (var context2 = await TestCommon.Instance.GetContextAsync(TestCommon.TestSite, 1))
@@ -1978,6 +2133,141 @@ namespace PnP.Core.Test.SharePoint
 
                 // Cleanup the created list
                 await myList.DeleteAsync();
+            }
+        }
+
+        [TestMethod]
+        public async Task ImageFieldTest()
+        {
+            //TestCommon.Instance.Mocking = false;
+            using (var context = await TestCommon.Instance.GetContextAsync(TestCommon.TestSite))
+            {
+
+                //==========================================================
+                // Step 1: Create a new list
+                string listTitle = TestCommon.GetPnPSdkTestAssetName("ImageAndLocationFieldTest");
+
+                IList myList = null;
+
+                try
+                {
+                    myList = await context.Web.Lists.GetByTitleAsync(listTitle);
+
+                    if (TestCommon.Instance.Mocking && myList != null)
+                    {
+                        Assert.Inconclusive("Test data set should be setup to not have the list available.");
+                    }
+
+                    if (myList == null)
+                    {
+                        myList = await context.Web.Lists.AddAsync(listTitle, ListTemplateType.GenericList);
+                    }
+
+                    //==========================================================
+                    string fldImage1 = "Image1";
+                    IField addedImageField1 = await myList.Fields.AddFieldAsXmlAsync($"<Field DisplayName='{fldImage1}' Format='Thumbnail' IsModern='TRUE' Name='{fldImage1}' Title='{fldImage1}' Type='Thumbnail'></Field>", addToDefaultView: true);
+
+                    // Upload an item 
+                    var addedItem = await myList.Items.AddAsync(new Dictionary<string, object>
+                    {
+                        { "Title", "Item1" }                        
+                    });
+
+                    // Read the item again to get a reference to the image column
+                    myList = context.Web.Lists.GetByTitle(listTitle, p => p.Title, p => p.Items, p => p.Fields.QueryProperties(p => p.InternalName, p => p.FieldTypeKind, p => p.TypeAsString, p => p.Title));
+
+                    // Set the image for the added item
+                    addedItem = myList.Items.AsRequested().First();
+                    // Important to add the extension in the image name as that's being checked to be a valid image extension
+                    await (addedItem[$"{fldImage1}"] as IFieldThumbnailValue).UploadImageAsync(addedItem, "parker-ms-300.png", System.IO.File.OpenRead($".{Path.DirectorySeparatorChar}TestAssets{Path.DirectorySeparatorChar}parker-ms-300.png"));
+
+                    // Read the item again to get a reference to the image column which now should be populated
+                    myList = context.Web.Lists.GetByTitle(listTitle, p => p.Title, p => p.Items, p => p.Fields.QueryProperties(p => p.InternalName, p => p.FieldTypeKind, p => p.TypeAsString, p => p.Title));
+                    addedItem = myList.Items.AsRequested().First();
+
+                    Assert.IsTrue(addedItem[$"{fldImage1}"] is IFieldThumbnailValue);
+                    Assert.IsTrue((addedItem[$"{fldImage1}"] as IFieldThumbnailValue).FileName.Contains("parker-ms-300"));
+
+                    // Read the item using LoadListDataAsStreamAsync
+                    myList.Items.Clear();
+                    await myList.LoadListDataAsStreamAsync(new RenderListDataOptions 
+                    { 
+                        
+                    });
+
+                    addedItem = myList.Items.AsRequested().First();
+                    Assert.IsTrue(addedItem[$"{fldImage1}"] is IFieldThumbnailValue);
+                    Assert.IsTrue((addedItem[$"{fldImage1}"] as IFieldThumbnailValue).FileName.Contains("parker-ms-300"));
+                }
+                finally
+                {
+                    await myList.DeleteAsync();
+                }
+            }
+        }
+
+        [TestMethod]
+        public async Task LocationFieldTest()
+        {
+            //TestCommon.Instance.Mocking = false;
+            using (var context = await TestCommon.Instance.GetContextAsync(TestCommon.TestSite))
+            {
+
+                //==========================================================
+                // Step 1: Create a new list
+                string listTitle = TestCommon.GetPnPSdkTestAssetName("LocationFieldTest");
+
+                IList myList = null;
+
+                try
+                {
+                    myList = await context.Web.Lists.GetByTitleAsync(listTitle);
+
+                    if (TestCommon.Instance.Mocking && myList != null)
+                    {
+                        Assert.Inconclusive("Test data set should be setup to not have the list available.");
+                    }
+
+                    if (myList == null)
+                    {
+                        myList = await context.Web.Lists.AddAsync(listTitle, ListTemplateType.GenericList);
+                    }
+
+                    //==========================================================
+                    string fldLocation1 = "Location1";
+                    IField addedLocationField1 = await myList.Fields.AddFieldAsXmlAsync($"<Field DisplayName='{fldLocation1}' Format='Dropdown' IsModern='TRUE' Name='{fldLocation1}' Title='{fldLocation1}' Type='Location'></Field>", addToDefaultView: true);
+
+                    // Upload an item 
+                    var addedItem = await myList.Items.AddAsync(new Dictionary<string, object>
+                    {
+                        { "Title", "Item1" },
+                        { fldLocation1, addedLocationField1.NewFieldLocationValue("Somewhere", 50.6354, 3.06998) }
+                    });
+
+                    // Read the item again to get a reference to the image column which now should be populated
+                    myList = context.Web.Lists.GetByTitle(listTitle, p => p.Title, p => p.Items, p => p.Fields.QueryProperties(p => p.InternalName, p => p.FieldTypeKind, p => p.TypeAsString, p => p.Title));
+                    addedItem = myList.Items.AsRequested().First();
+
+                    Assert.IsTrue((addedItem[$"{fldLocation1}"] as IFieldLocationValue).DisplayName == "Somewhere");
+                    Assert.IsTrue((addedItem[$"{fldLocation1}"] as IFieldLocationValue).Latitude == 50.6354);
+                    Assert.IsTrue((addedItem[$"{fldLocation1}"] as IFieldLocationValue).Longitude == 3.06998);
+
+                    // Read the item using LoadListDataAsStreamAsync
+                    myList.Items.Clear();
+                    await myList.LoadListDataAsStreamAsync(new RenderListDataOptions
+                    {
+
+                    });
+
+                    addedItem = myList.Items.AsRequested().First();
+                    Assert.IsTrue((addedItem[$"{fldLocation1}"] as IFieldLocationValue).DisplayName == "Somewhere");
+                    Assert.IsTrue((addedItem[$"{fldLocation1}"] as IFieldLocationValue).Latitude == 50.6354);
+                    Assert.IsTrue((addedItem[$"{fldLocation1}"] as IFieldLocationValue).Longitude == 3.06998);
+                }
+                finally
+                {
+                    await myList.DeleteAsync();
+                }
             }
         }
 
@@ -3732,7 +4022,7 @@ namespace PnP.Core.Test.SharePoint
         {
             //TestCommon.Instance.Mocking = false;
             (string parentLibraryName, _, string documentUrl) = await TestAssets.CreateTestDocumentAsync(0);
-
+            
             try
             {
                 using (var context = await TestCommon.Instance.GetContextAsync(TestCommon.TestSite, 1))

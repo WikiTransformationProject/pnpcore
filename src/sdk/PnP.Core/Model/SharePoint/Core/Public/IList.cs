@@ -61,7 +61,7 @@ namespace PnP.Core.Model.SharePoint
         /// <summary>
         /// Gets or sets the DraftVersionVisibility for the list
         /// </summary>
-        public int DraftVersionVisibility { get; set; }
+        public DraftVisibilityType DraftVersionVisibility { get; set; }
 
         /// <summary>
         /// Gets or sets whether moderation/content approval is enabled on the list
@@ -150,6 +150,11 @@ namespace PnP.Core.Model.SharePoint
         /// The url to the default view of this list.
         /// </summary>
         public string DefaultViewUrl { get; }
+
+        /// <summary>
+        /// Gets or sets whether the item is opened by default using the browser.
+        /// </summary>
+        public bool DefaultItemOpenInBrowser { get; set; }
 
         /// <summary>
         /// Defines a value that specifies the reading order of the list.

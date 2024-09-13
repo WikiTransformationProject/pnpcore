@@ -131,6 +131,7 @@ namespace PnP.Core.Model.SharePoint
         /// Populates this <see cref="PageText"/> control from its HTML representation
         /// </summary>
         /// <param name="element">The HTML representation to populate from</param>
-        void FromHtml(IElement element);
+        /// <param name="isHeader"></param>
+        void FromHtml(IElement element, bool isHeader);
     }
 }
