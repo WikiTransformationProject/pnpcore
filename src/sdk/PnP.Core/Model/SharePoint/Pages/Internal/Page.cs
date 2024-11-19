@@ -2386,7 +2386,11 @@ namespace PnP.Core.Model.SharePoint
             // Set promoted state
             PageListItem[PageConstants.PromotedStateField] = (int)PromotedState.Promoted;
             // Set publication date
-            PageListItem[PageConstants.FirstPublishedDate] = DateTime.Now;
+            // 2024-11-19 HEU ADDITION of check if the date is already set: if the publishing date is already set - leave it in place; might come from PnP Template for migrated pages
+            if (!PageListItem.Values.TryGetValue(PageConstants.FirstPublishedDate, out var existingPublishedDate) || string.IsNullOrWhiteSpace(existingPublishedDate?.ToString()))
+            {
+                PageListItem[PageConstants.FirstPublishedDate] = DateTime.Now;
+            }
             // Don't use UpdateOverWriteVersion here as the page can already be checked in, doing so will give an 
             // "Additions to this Web site have been blocked" error
             await PageListItem.SystemUpdateAsync().ConfigureAwait(false);
