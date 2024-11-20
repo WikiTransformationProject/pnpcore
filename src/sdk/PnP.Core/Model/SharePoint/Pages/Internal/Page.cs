@@ -45,7 +45,10 @@ namespace PnP.Core.Model.SharePoint
         public static int globalRichTextStylingVersion = 0;
         private bool isEmailReady = false;
         private string[] pageSettingsSliceHtmlAttributes;
-        private EditorType editorType = EditorType.CK4;
+        /**
+        Editor type for text webparts. Made available to change the global default and to check its value.
+        */
+        public static EditorType editorType = EditorType.CK4;
 
         private string pageTitle;
         private string pageName;
