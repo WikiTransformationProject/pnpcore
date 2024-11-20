@@ -32,7 +32,17 @@ namespace PnP.Core.Model.SharePoint
     // page settings defaults
     private bool isDefaultDescription = true;
         private bool isSpellCheckEnabled = true;
-        private int globalRichTextStylingVersion = 1;
+        /**
+            2024-11-20 HEU
+            This used to be set to 1, which makes paragraphs on pages stick together because of zero margins. This was introduced at some time in 2024 for ck4 pages.
+            Setting this to 0 introduces margins back, although nearly double the margins that ck5 paragraphs get. But it looks waay better than no margins.
+            When the ck4 page is converted to ck5 (by editing the page), the global setting stays, but can be overridden by choosing styling options
+            for paragraphs like "Normal" and "No spacing".
+            Long story short: 
+            - globalRichTextStylingVersion==1 means: "No spacing" setting for all elements in text web parts.
+            - globalRichTextStylingVersion==0 means: "Normal" setting for all elements in text web parts, but with quite big margins.
+        */
+        public static int globalRichTextStylingVersion = 0;
         private bool isEmailReady = false;
         private string[] pageSettingsSliceHtmlAttributes;
         private EditorType editorType = EditorType.CK4;
