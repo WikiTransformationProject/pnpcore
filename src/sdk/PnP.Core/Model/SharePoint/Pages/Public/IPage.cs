@@ -144,7 +144,8 @@ namespace PnP.Core.Model.SharePoint
         /// <summary>
         /// Returns the editor that was used to create/update this page
         /// </summary>
-        public EditorType EditorType { get; }
+        /// 2025-01-15 HEU adding setter to modify editor type e.g. after loading a page to e.g. force a specific type when overwriting
+        public EditorType EditorType { get; set; }
 
         /// <summary>
         /// Adds a new section to your client side page
@@ -228,7 +229,7 @@ namespace PnP.Core.Model.SharePoint
         public void AddControl(ICanvasControl control, ICanvasColumn column, int order);
 
         /// <summary>
-        /// Removes the set page header 
+        /// Removes the set page header by setting the page banner web part to "Plain" mode
         /// </summary>
         public void RemovePageHeader();
 

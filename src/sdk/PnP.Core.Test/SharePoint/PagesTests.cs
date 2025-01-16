@@ -9,6 +9,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Linq.Expressions;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace PnP.Core.Test.SharePoint
@@ -23,6 +24,7 @@ namespace PnP.Core.Test.SharePoint
             //TestCommon.Instance.Mocking = false;
         }
 
+        
         #region Page Loading
         [TestMethod]
         public async Task CleanLoad()
@@ -217,6 +219,55 @@ namespace PnP.Core.Test.SharePoint
                 // Delete the created pages again
                 await newPage1.DeleteAsync();
             }
+        }
+
+        [TestMethod]
+        public void DeserializeCanvasControlDataTest()
+        {
+            var controlDataJson = """
+            {
+              "id": "61f0ef56-b5f0-4d94-b1b9-0a5087332cc7",
+              "controlType": 3,
+              "position": {
+                "layoutIndex": 1,
+                "zoneIndex": null,
+                "sectionIndex": null,
+                "controlIndex": 1,
+                "sectionFactor": 0,
+                "zoneId": "f419c0ec-ee17-48d1-b8cb-30e296c9d286"
+              },
+              "webPartId": "cbe7b0a9-3504-44dd-a3a3-0e5cacd07788",
+              "reservedHeight": 207,
+              "addedFromPersistedData": true,
+              "reservedWidth": 1607
+            }
+            """;
+            var controlData = JsonSerializer.Deserialize<CanvasControlData>(controlDataJson, PnPConstants.JsonSerializer_IgnoreNullValues);
+            Assert.IsNotNull(controlData.Position.ZoneIndex == 0);
+            Assert.IsNotNull(controlData.Position.SectionIndex == 0);
+
+            controlDataJson = """
+            {
+              "id": "61f0ef56-b5f0-4d94-b1b9-0a5087332cc7",
+              "controlType": 3,
+              "position": {
+                "layoutIndex": 1,
+                "zoneIndex": 2,
+                "sectionIndex": 3,
+                "controlIndex": 1,
+                "sectionFactor": 0,
+                "zoneId": "f419c0ec-ee17-48d1-b8cb-30e296c9d286"
+              },
+              "webPartId": "cbe7b0a9-3504-44dd-a3a3-0e5cacd07788",
+              "reservedHeight": 207,
+              "addedFromPersistedData": true,
+              "reservedWidth": 1607
+            }
+            """;
+
+            controlData = JsonSerializer.Deserialize<CanvasControlData>(controlDataJson, PnPConstants.JsonSerializer_IgnoreNullValues);
+            Assert.IsNotNull(controlData.Position.ZoneIndex == 2);
+            Assert.IsNotNull(controlData.Position.SectionIndex == 3);
         }
         #endregion
 
@@ -1336,7 +1387,7 @@ namespace PnP.Core.Test.SharePoint
             //TestCommon.Instance.Mocking = false;
             using (var context = await TestCommon.Instance.GetContextAsync(TestCommon.TestSite))
             {
-                var page = await context.Web.NewPageAsync();
+                var page = await context.Web.NewPageAsync(editorType: EditorType.CK4);
                 string pageName = TestCommon.GetPnPSdkTestAssetName("PageTextWithInlineImageTest.aspx");
                 page.AddSection(CanvasSectionTemplate.TwoColumn, 1);
 
@@ -1397,7 +1448,7 @@ namespace PnP.Core.Test.SharePoint
             //TestCommon.Instance.Mocking = false;
             using (var context = await TestCommon.Instance.GetContextAsync(TestCommon.TestSite))
             {
-                var page = await context.Web.NewPageAsync();
+                var page = await context.Web.NewPageAsync(editorType: EditorType.CK4);
                 string pageName = TestCommon.GetPnPSdkTestAssetName("PageTextWithInlineImageWithOpitonsTest.aspx");
                 page.AddSection(CanvasSectionTemplate.TwoColumn, 1);
 
@@ -1435,7 +1486,6 @@ namespace PnP.Core.Test.SharePoint
             using (var context = await TestCommon.Instance.GetContextAsync(TestCommon.TestSite))
             {
                 var page = await context.Web.NewPageAsync();
-                (page as Page).EditorType = EditorType.CK5;
 
                 string pageName = TestCommon.GetPnPSdkTestAssetName("PageTextWithCK5InlineImageWithOptionsTest.aspx");
                 page.AddSection(CanvasSectionTemplate.TwoColumn, 1);
@@ -1446,7 +1496,7 @@ namespace PnP.Core.Test.SharePoint
                 var html1 = page.GetInlineImage(textPart, "/sites/prov-2/siteassets/__siteicon__.png", new PageImageOptions() { Link = "https://aka.ms/m365pnp"});
                 var html2 = page.GetInlineImage(textPart, "/sites/prov-2/siteassets/__siteicon__.png", new PageImageOptions() { Alignment = PageImageAlignment.Left, Link = "https://aka.ms/m365pnp", Caption = "PnP Rocks caption", Width = 96, Height = 96, WidthPercentage = 20 });
                 var html3 = page.GetInlineImage(textPart, "/sites/prov-2/siteassets/__siteicon__.png", new PageImageOptions() { Alignment = PageImageAlignment.Right, Link = "https://aka.ms/m365pnp", Caption = "PnP Rocks caption", AlternativeText = "Alternative text", Width = 96, Height = 96, WidthPercentage = 20 });
-                string htmlAdded = $"<p>Before inline images</p>{html1}<p>Post image</p>{html2}<p>Post image</p>{html3}<p>Post image</p>";
+                string htmlAdded = $"<p class=\"noSpacingAbove spacingBelow\" data-text-type=\"withSpacing\">Before inline images </p>{html1}<p class=\"noSpacingAbove spacingBelow\" data-text-type=\"withSpacing\">Post image</p>{html2}<p class=\"noSpacingAbove spacingBelow\" data-text-type=\"withSpacing\">Post image</p>{html3}<p class=\"noSpacingAbove spacingBelow\" data-text-type=\"withSpacing\">Post image</p>";
                 textPart.Text = htmlAdded;
                 page.AddControl(textPart, page.Sections[0].Columns[0]);
 

@@ -18,16 +18,20 @@ namespace PnP.Core.Model.SharePoint
     public sealed class Page : IPage
     {
         private const string inlineImageCK4Html = "<div tabindex=\"-1\" data-cke-widget-wrapper=\"1\" data-cke-filter=\"off\" class=\"cke_widget_wrapper cke_widget_block cke_widget_inlineimage cke_widget_wrapper_webPartInRteInlineImage cke_widget_wrapper_{ImageAlignment} cke_widget_wrapper_webPartInRte\" data-cke-display-name=\"div\" data-cke-widget-id=\"0\" role=\"region\" aria-label=\"Inline image in RTE. Use Alt + F11 to go to toolbar. Use Alt + P to open the property pane.\"><div data-webpart-id=\"image\" class=\"webPartInRte {ImageAlignment} webPartInRteInlineImage cke_widget_element\" data-cke-widget-data=\"%7B%22classes%22%3A%7B%22webPartInRteInlineImage%22%3A1%2C%22{ImageAlignment}%22%3A1%2C%22webPartInRte%22%3A1%7D%7D\" data-cke-widget-upcasted=\"1\" data-cke-widget-keep-attr=\"0\" data-widget=\"inlineimage\" data-instance-id=\"{TextEditorInstanceId}\" title=\"\"></div></div>";
-        private const string inlineImageCK5Html = "<div class=\"imagePlugin\" style=\"background-color:transparent;position:relative;\" data-alignment=\"{ImageAlignment}\" data-imageurl=\"{ImageUrl}\" data-uploading=\"0\" data-height=\"{ImageHeight}\" data-width=\"{ImageWidth}\" data-widthpercentage=\"{WidthPercentage}\" data-captiontext=\"{ImageCaption}\" data-alttext=\"{ImageAlternativeText}\" data-linkurl=\"{ImageLinkUrl}\"></div>";
+        public const string inlineImageCK5Html = "<div class=\"imagePlugin\" style=\"background-color:transparent;position:relative;\" data-alignment=\"{ImageAlignment}\" data-imageurl=\"{ImageUrl}\" data-uploading=\"0\" data-height=\"{ImageHeight}\" data-width=\"{ImageWidth}\" data-imagenaturalheight=\"{ImageHeight}\" data-imagenaturalwidth=\"{ImageWidth}\" data-widthpercentage=\"{WidthPercentage}\" data-webid=\"{WebId}\" data-siteid=\"{SiteId}\" data-listid=\"{ListId}\" data-uniqueid=\"{UniqueId}\" data-isoverlaytextenabled=\"false\" data-captiontext=\"{ImageCaption}\" data-alttext=\"{ImageAlternativeText}\" data-linkurl=\"{ImageLinkUrl}\"></div>";
         private const string inlineImageTextControl = "{TextEditorInstanceId}";
-        private const string inlineImageAlignment = "{ImageAlignment}";
-        private const string inlineImageUrl = "{ImageUrl}";
-        private const string inlineImageLinkUrl = "{ImageLinkUrl}";
-        private const string inlineImageCaption = "{ImageCaption}";
-        private const string inlineImageAlternativeText = "{ImageAlternativeText}";
-        private const string inlineImageWidth = "{ImageWidth}";
-        private const string inlineImageHeight = "{ImageHeight}";
-        private const string inlineWidthPercentage = "{WidthPercentage}";
+        public const string inlineImageAlignment = "{ImageAlignment}";
+        public const string inlineImageUrl = "{ImageUrl}";
+        public const string inlineImageLinkUrl = "{ImageLinkUrl}";
+        public const string inlineImageCaption = "{ImageCaption}";
+        public const string inlineImageAlternativeText = "{ImageAlternativeText}";
+        public const string inlineImageWidth = "{ImageWidth}";
+        public const string inlineImageHeight = "{ImageHeight}";
+        public const string inlineWidthPercentage = "{WidthPercentage}";
+        public const string inlineWebId = "{WebId}";
+        public const string inlineSiteId = "{SiteId}";
+        public const string inlineListId = "{ListId}";
+        public const string inlineUniqueId = "{UniqueId}";
 
     // page settings defaults
     private bool isDefaultDescription = true;
@@ -42,21 +46,20 @@ namespace PnP.Core.Model.SharePoint
             - globalRichTextStylingVersion==1 means: "No spacing" setting for all elements in text web parts.
             - globalRichTextStylingVersion==0 means: "Normal" setting for all elements in text web parts, but with quite big margins.
         */
-        public static int globalRichTextStylingVersion = 0;
+        public int globalRichTextStylingVersion = 0;
         private bool isEmailReady = false;
         private string[] pageSettingsSliceHtmlAttributes;
-        /**
-        Editor type for text webparts. Made available to change the global default and to check its value.
-        */
-        public static EditorType editorType = EditorType.CK4;
+        private EditorType editorType = EditorType.CK4;
 
         private string pageTitle;
         private string pageName;
         private static readonly Expression<Func<IList, object>>[] getPagesLibraryExpression = new Expression<Func<IList, object>>[] {p => p.Title, p => p.TemplateType, p => p.EnableFolderCreation,
             p => p.EnableMinorVersions, p => p.EnableModeration, p => p.EnableVersioning, p => p.ForceCheckout, p => p.RootFolder.QueryProperties(p => p.Properties, p => p.ServerRelativeUrl), p => p.ListItemEntityTypeFullName, p => p.Fields };
+        
         #region Construction
 
-        internal Page(PnPContext context, IList pagesLibrary, IListItem pageListItem, PageLayoutType pageLayoutType = PageLayoutType.Article)
+        // 2025-01-15 HEU: making constructor public to aid unit testing
+        public Page(PnPContext context, IList pagesLibrary, IListItem pageListItem, PageLayoutType pageLayoutType = PageLayoutType.Article)
         {
             if (pageLayoutType == PageLayoutType.Home)
             {
@@ -231,9 +234,19 @@ namespace PnP.Core.Model.SharePoint
                 return editorType;
             }
 
-            internal set
+            set
             {
                 editorType = value;
+                switch (editorType)
+                {
+                    case EditorType.CK4:
+                        globalRichTextStylingVersion = 0;
+                        break;
+                    case EditorType.CK5:
+                    default:
+                        globalRichTextStylingVersion = 1;
+                        break;
+                }
             }
         }
 
@@ -484,7 +497,7 @@ namespace PnP.Core.Model.SharePoint
             }
         }
 
-        internal async static Task<IPage> NewPageAsync(PnPContext context, PageLayoutType pageLayoutType = PageLayoutType.Article)
+        internal async static Task<IPage> NewPageAsync(PnPContext context, PageLayoutType pageLayoutType = PageLayoutType.Article, EditorType editorType = EditorType.CK5)
         {
             if (pageLayoutType == PageLayoutType.Topic || pageLayoutType == PageLayoutType.NewsDigest)
             {
@@ -493,7 +506,10 @@ namespace PnP.Core.Model.SharePoint
 
             // Get a reference to the pages library, reuse the existing one if the correct properties were loaded
             IList pagesLibrary = await EnsurePagesLibraryAsync(context).ConfigureAwait(false);
-            return new Page(context, pagesLibrary, null, pageLayoutType);
+            return new Page(context, pagesLibrary, null, pageLayoutType)
+            {
+                EditorType = editorType
+            };
         }
 
         // EnsurePagesLibraryAsync cannot detect already retrieved pages libs, leading to the pages lib being requested over and over again
@@ -1483,8 +1499,7 @@ namespace PnP.Core.Model.SharePoint
             ReIndex();
 
             var hasPageTitleWPInOneColumFullWith = false;
-            if (sections.Count != 0 && sections.First().Type == CanvasSectionTemplate.OneColumnFullWidth &&
-                sections.First().Controls.Any(c => (c as PageWebPart)?.WebPartId?.Equals("cbe7b0a9-3504-44dd-a3a3-0e5cacd07788") == true))
+            if (sections.Any(s => s.Type == CanvasSectionTemplate.OneColumnFullWidth && s.Controls.Any(c => (c as PageWebPart)?.WebPartId?.Equals("cbe7b0a9-3504-44dd-a3a3-0e5cacd07788") == true)))
             {
                 hasPageTitleWPInOneColumFullWith = true; //Message ID: MC791596 / Roadmap ID: 386904
             }
@@ -1713,7 +1728,7 @@ namespace PnP.Core.Model.SharePoint
             var pageHeaderHtml = "";
             if (pageHeader != null)
             {
-                if(pageHeader.Type == PageHeaderType.Default && sections.Any() && sections.First().Type == CanvasSectionTemplate.OneColumnFullWidth && sections.First().Controls.Any(c => (c as PageWebPart)?.WebPartId?.Equals("cbe7b0a9-3504-44dd-a3a3-0e5cacd07788") == true))
+                if(pageHeader.Type == PageHeaderType.Default && sections.Any(s => s.Type == CanvasSectionTemplate.OneColumnFullWidth && s.Controls.Any(c => (c as PageWebPart)?.WebPartId?.Equals("cbe7b0a9-3504-44dd-a3a3-0e5cacd07788") == true)))
                 {
                     //Page created from code and Header was not set
                     SetPageTitleWebPartPageHeader();
@@ -1926,7 +1941,13 @@ namespace PnP.Core.Model.SharePoint
             // Persist the page header
             if (pageHeader.Type == PageHeaderType.None)
             {
+                // Only set the page header to "old" empty page header when there's no one column full width section present. A one column full width section
+                // with a banner web part is considered to be a page header
+                if (sections.Any(s => s.Type == CanvasSectionTemplate.OneColumnFullWidth) == false)
+                {
                 PageListItem[PageConstants.PageLayoutContentField] = SharePoint.PageHeader.NoHeader(pageTitle);
+                }
+
                 if (PageListItem.Values.ContainsKey(PageConstants._AuthorByline))
                 {
                     PageListItem[PageConstants._AuthorByline] = null;
@@ -2152,6 +2173,7 @@ namespace PnP.Core.Model.SharePoint
                     // we allow enabling communication site features on STS and EHS sites, so don't block adding full width sections on those sites
                     !PnPContext.Web.WebTemplate.Equals("STS", StringComparison.InvariantCultureIgnoreCase) &&
                     !PnPContext.Web.WebTemplate.Equals("GROUP", StringComparison.InvariantCultureIgnoreCase) &&
+                    !PnPContext.Web.WebTemplate.Equals("TEAMCHANNEL", StringComparison.InvariantCultureIgnoreCase) &&
                     !PnPContext.Web.WebTemplate.Equals("EHS", StringComparison.InvariantCultureIgnoreCase) &&
                     // SharePoint Syntex Content Center sites can also have full width sections
                     !PnPContext.Web.WebTemplate.Equals("CONTENTCTR", StringComparison.InvariantCultureIgnoreCase))
@@ -2931,6 +2953,10 @@ namespace PnP.Core.Model.SharePoint
             }
             else
             {
+                // Find the server relative image
+                var image = await PnPContext.Web.GetFileByServerRelativeUrlAsync(serverRelativeUrl, p => p.UniqueId, p => p.ListId).ConfigureAwait(false);
+
+
                 // Set defaults in case height and width are not set
                 if (!imageOptions.Height.HasValue)
                 {
@@ -2961,7 +2987,11 @@ namespace PnP.Core.Model.SharePoint
                                          .Replace(inlineImageLinkUrl, imageOptions.Link)
                                          .Replace(inlineImageWidth, imageOptions.Width.Value.ToString())
                                          .Replace(inlineImageHeight, imageOptions.Height.Value.ToString())
-                                         .Replace(inlineWidthPercentage, imageOptions.WidthPercentage.Value.ToString());
+                                         .Replace(inlineWidthPercentage, imageOptions.WidthPercentage.Value.ToString())
+                                         .Replace(inlineWebId, PnPContext.Web.Id.ToString())
+                                         .Replace(inlineSiteId, PnPContext.Site.Id.ToString())
+                                         .Replace(inlineListId, image.ListId.ToString())
+                                         .Replace(inlineUniqueId, image.UniqueId.ToString());
             }
         }
 

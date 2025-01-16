@@ -6,6 +6,34 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### Added
+
+- Support for .NET 9.0 [jansenbe - Bert Jansen]
+
+### Changed
+
+- Moved the approve permissions for deployed SPFx packages to use Graph instead of CSOM #1479 [mloitzl - Martin Loitzl]
+- Added `BaseType` property to `IList` #1532 [jansenbe - Bert Jansen]
+- Added support for listing the properties to load when using `IFolder.EnsureFolderAsync` #1504 [jansenbe - Bert Jansen]
+- Auth library: Removed the PnP Managent Shell App (`31359c7f-bd7e-475c-86db-fdb8c937548e`) as default app to authenticate with [jansenbe - Bert Jansen]
+- Fix check for HeaderTypes as new PageTitle WebPart in OneColumnFullWIth is not always in first section #1543 [czullu - Christian Zuellig]
+- Fix loading additional properties of an `ISharePointUser` #1553 [jansenbe - Bert Jansen]
+- Updated assembly versions #1559 [gautamdsheth - Gautam Sheth]
+- Removed support for .NET 6 and .NET 7 as they are out of support [gautamdsheth - Gautam Sheth]
+- Fixed to the issue where users were getting added to User Info list instead of a SharePoint group. #1577 [czullu - Christian Zuellig]
+- Modern Page Title in OneColumnFullWithSection also allowed in TEAMCHANNEL Sites #1564 [czullu - Christian Zuellig]
+- Pages that removed the full width section and the banner web part and therefore have no page title anymore do not get a page title when being updated #1550 [jansenbe - Bert Jansen]
+- Fixed regression introduced by https://github.com/pnp/pnpcore/commit/29a64bef0cfedbb3a0f7b64386b64d54793d7d71 and was partly fixed by #1577 [jansenbe - Bert Jansen]
+- Improved page parsing robustness by allowing zone and section index values to be not defined #1552 [jansenbe - Bert Jansen]
+- Ensure that for first party web parts that support full bleed we set the SupportsFullBleed flag #1554 [jansenbe - Bert Jansen]
+- Doing a People Search Using PnP Core Search API - Blocked with Readonly Setter for ResultSourceId #1566 [jansenbe - Bert Jansen]
+- Switched to default CK5 editor type for new pages + improved the inline image handling for the CK5 editor #1558 [jansenbe - Bert Jansen]
+- Turned on Rate-Limiting by default with a remaining limit percentage of 10% [jansenbe - Bert Jansen]
+- IRetryEvent.WaitTime will be incorrect when the delay time is greater than 59 seconds #1590 [jansenbe - Bert Jansen]
+- Admin library: TenantProperties: AllowWebPropertyBagUpdateWhenDenyAddAndCustomizePagesIsEnabled #1591 [czullu - Christian Zuellig]
+
 ## [1.14]
 
 ### Added

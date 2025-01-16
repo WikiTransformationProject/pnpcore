@@ -1,5 +1,9 @@
 ﻿# PnP Core SDK - Azure Function with Managed Identity Sample
 
+> [!Important]
+> Beginning **10 November 2026**, the **in-process model** for .NET apps in Azure Functions will **no longer be supported**. To ensure that your apps that use this model continue being supported, you'll need to transition to the isolated worker model by that date. [Retirement: Support for the in-process model for .NET apps in Azure Functions ends 10 November 2026.](https://azure.microsoft.com/en-us/updates/retirement-support-for-the-inprocess-model-for-net-apps-in-azure-functions-ends-10-november-2026/)
+> Please use the new version of this sample: **Azure V4 Function using managed identity (isolated)**
+
 This solution demonstrates how to build Azure function that connects to a SPO site using:
 
 - System-Managed Identity, when running in Azure and
