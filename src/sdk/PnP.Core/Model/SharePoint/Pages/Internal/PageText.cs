@@ -146,6 +146,11 @@ namespace PnP.Core.Model.SharePoint
             if (!string.IsNullOrEmpty(Text))
             {
                 if (Text.Trim().StartsWith("<p>", StringComparison.InvariantCultureIgnoreCase) ||
+                    // 2025-01-19 HEU: adding support for pre-formatted paragraphs, which will have a style attribute (CK5 pages)
+                    Text.Trim().StartsWith("<p ", StringComparison.InvariantCultureIgnoreCase) ||
+                    // 2025-01-19 HEU: adding support for CK5 tables, which use a figure element as root
+                    Text.Trim().StartsWith("<figure>", StringComparison.InvariantCultureIgnoreCase) ||
+                    Text.Trim().StartsWith("<figure ", StringComparison.InvariantCultureIgnoreCase) ||
                     Text.Trim().StartsWith("<h1>", StringComparison.InvariantCultureIgnoreCase) ||
                     Text.Trim().StartsWith("<h2>", StringComparison.InvariantCultureIgnoreCase) ||
                     Text.Trim().StartsWith("<h3>", StringComparison.InvariantCultureIgnoreCase) ||
