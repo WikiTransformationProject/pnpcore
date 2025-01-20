@@ -43,7 +43,7 @@ namespace PnP.Core.Model.SharePoint
             When the ck4 page is converted to ck5 (by editing the page), the global setting stays, but can be overridden by choosing styling options
             for paragraphs like "Normal" and "No spacing".
             Long story short: 
-            - globalRichTextStylingVersion==1 means: "No spacing" setting for all elements in text web parts.
+            - globalRichTextStylingVersion==1 means: "No spacing" setting for all elements in text web parts. Default for CK5 pages.
             - globalRichTextStylingVersion==0 means: "Normal" setting for all elements in text web parts, but with quite big margins.
         */
         public int globalRichTextStylingVersion = 0;

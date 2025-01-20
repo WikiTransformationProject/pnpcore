@@ -151,6 +151,8 @@ namespace PnP.Core.Model.SharePoint
                     // 2025-01-19 HEU: adding support for CK5 tables, which use a figure element as root
                     Text.Trim().StartsWith("<figure>", StringComparison.InvariantCultureIgnoreCase) ||
                     Text.Trim().StartsWith("<figure ", StringComparison.InvariantCultureIgnoreCase) ||
+                    // 2025-01-20 HEU: this is also necessary for CK4 image placeholders, as those so far were enclosed by <p>
+                    Text.Trim().StartsWith("<div ", StringComparison.InvariantCultureIgnoreCase) ||
                     Text.Trim().StartsWith("<h1>", StringComparison.InvariantCultureIgnoreCase) ||
                     Text.Trim().StartsWith("<h2>", StringComparison.InvariantCultureIgnoreCase) ||
                     Text.Trim().StartsWith("<h3>", StringComparison.InvariantCultureIgnoreCase) ||
