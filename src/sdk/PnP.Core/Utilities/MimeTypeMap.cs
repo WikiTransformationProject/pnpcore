@@ -10,7 +10,7 @@ namespace PnP.Core.Utilities
     /// Code copied from https://github.com/samuelneff/MimeTypeMap, created by @samuelneff 
     /// 
     /// </summary>
-    internal static class MimeTypeMap
+    public static class MimeTypeMap /* HEU: making mime type map available for other code as well*/
     {
         private const string dot = ".";
         private const string questionMark = "?";
@@ -679,7 +679,7 @@ namespace PnP.Core.Utilities
         /// <param name="mimeType">The variable to store the MIME type.</param>
         /// <returns>The MIME type.</returns>
         /// <exception cref="ArgumentNullException" />
-        internal static bool TryGetMimeType(string str, out string mimeType)
+        public static bool TryGetMimeType(string str, out string mimeType)  /* HEU: making mime type map available for other code as well*/
         {
             if (str == null)
             {
