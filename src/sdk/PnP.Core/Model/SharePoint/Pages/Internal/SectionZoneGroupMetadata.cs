@@ -34,5 +34,11 @@ namespace PnP.Core.Model.SharePoint
         {
             get; set;
         }
+
+        [JsonPropertyName("headingLevel")]
+        public int HeadingLevel
+        {
+            get; set;
+        }
     }
 }

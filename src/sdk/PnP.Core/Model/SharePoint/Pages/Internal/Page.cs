@@ -1635,6 +1635,7 @@ namespace PnP.Core.Model.SharePoint
                 currentSection.SectionType = zoneGroupMetadata.Type;
                 currentSection.DisplayName = zoneGroupMetadata.DisplayName;
                 currentSection.IsExpanded = zoneGroupMetadata.IsExpanded;
+                currentSection.HeadingLevel = zoneGroupMetadata.HeadingLevel;
                 currentSection.ShowDividerLine = zoneGroupMetadata.ShowDividerLine;
                 if (zoneGroupMetadata.IconAlignment != null)
                 {

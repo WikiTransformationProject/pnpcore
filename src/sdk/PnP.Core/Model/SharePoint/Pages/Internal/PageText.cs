@@ -110,6 +110,7 @@ namespace PnP.Core.Model.SharePoint
                     Type = (Section as CanvasSection).SectionType == 0 ? 1 : (Section as CanvasSection).SectionType,
                     DisplayName = Section.DisplayName,
                     IsExpanded = Section.IsExpanded,
+                    HeadingLevel = Section.HeadingLevel,
                     ShowDividerLine = Section.ShowDividerLine,
                 };
 

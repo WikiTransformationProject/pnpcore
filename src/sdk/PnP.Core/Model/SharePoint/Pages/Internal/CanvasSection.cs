@@ -211,6 +211,12 @@ namespace PnP.Core.Model.SharePoint
         /// </summary>
         public int SectionType { get; set; }
 
+        /// <summary>
+        /// Set the heading level on a scale from 2 to 4 (at least those are available in the UI)
+        /// </summary>
+        public int HeadingLevel { get; set; }
+
+
         #endregion
 
         #region internal and private methods

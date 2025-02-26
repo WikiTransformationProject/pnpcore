@@ -71,5 +71,10 @@ namespace PnP.Core.Model.SharePoint
         /// Show a devided line for this collapsible section?
         /// </summary>
         bool ShowDividerLine { get; set; }
+
+        /// <summary>
+        /// Set the heading level on a scale from 2 to 4 (at least those are available in the UI)
+        /// </summary>
+        int HeadingLevel { get; set; }
     }
 }
