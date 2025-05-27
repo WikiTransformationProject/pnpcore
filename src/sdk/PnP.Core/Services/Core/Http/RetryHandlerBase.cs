@@ -71,7 +71,7 @@ namespace PnP.Core.Services
                     {
                         await rateLimiter.WaitAsync(cancellationToken).ConfigureAwait(false);
                     }
-                    await AwaitableGate.Instance.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    await AwaitableGate.MicrosoftInstance.WaitAsync(cancellationToken).ConfigureAwait(false);
 
                     response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
@@ -174,8 +174,8 @@ namespace PnP.Core.Services
                 AddOrUpdateRetryAttempt(request, retryCount);
 
                 // Delay time
-                AwaitableGate.Instance.SetWaitTime((int)delayTimeSpan.TotalMilliseconds);
-                await AwaitableGate.Instance.WaitAsync().ConfigureAwait(false);
+                AwaitableGate.MicrosoftInstance.SetWaitTime((int)delayTimeSpan.TotalMilliseconds);
+                await AwaitableGate.MicrosoftInstance.WaitAsync().ConfigureAwait(false);
 //                await delay.ConfigureAwait(false);
             }
         }

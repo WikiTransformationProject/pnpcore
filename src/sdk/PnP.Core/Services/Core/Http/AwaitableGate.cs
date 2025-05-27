@@ -10,7 +10,16 @@ namespace WikiTraccs.Shared.Http
     {
         // a static gate to apply throttling across all requests - in PnP.Core and PnP.Framework!
         // no pretty solution; should merge with rate limiter to coordinate backing off across all workloads
-        public static AwaitableGate Instance { get; private set; } = new();
+        public static AwaitableGate MicrosoftInstance { get; private set; } = new();
+        // same thing as for Microsoft, but for Atlassian
+        public static AwaitableGate AtlassianInstance { get; private set; } = new();
+
+        private DateTime lastRequesttime = DateTime.MinValue;
+#if DEBUG
+        public int? MaxRequestsPerSecond { get; set; } = null;
+#else
+        public int? MaxRequestsPerSecond { get; set; } = null;
+#endif
 
         private readonly object gateLock = new object();
         private TaskCompletionSource<bool>? tcs;
@@ -32,6 +41,31 @@ namespace WikiTraccs.Shared.Http
             {
                 SetWaitTime(initialWaitTimeMilliseconds);
             }
+        }
+
+        public async Task<int> WaitUntilNextRequestAllowed(CancellationToken cancellationToken = default)
+        {
+            if (!MaxRequestsPerSecond.HasValue || MaxRequestsPerSecond.Value <= 0)
+            {
+                return 0;
+            }
+
+            var waitTimeBetweenRequestsMs = 1000.0 / MaxRequestsPerSecond.Value;
+            var alreadyPassedWaitTimeSinceLastRequest = (DateTime.UtcNow - lastRequesttime).TotalMilliseconds;
+            var waitTimeLeftMs = (int)Math.Ceiling(waitTimeBetweenRequestsMs - alreadyPassedWaitTimeSinceLastRequest);
+            if (DateTime.UtcNow + TimeSpan.FromMilliseconds(waitTimeLeftMs) < releaseTimeUtc)
+            {
+                // already waiting long enough? fine, nothing to do
+                return 0;
+            } 
+            // otherwise: wait
+            if (waitTimeLeftMs > 0)
+            {
+                SetWaitTime(waitTimeLeftMs);
+                await WaitAsync(cancellationToken).ConfigureAwait(false);
+                return waitTimeLeftMs;
+            }
+            return 0;
         }
 
         public void SetWaitTime(int waitTimeMilliseconds)
@@ -127,7 +161,12 @@ namespace WikiTraccs.Shared.Http
             }
         }
 
-        public static bool IsMicrosoftEndpoint(HttpRequestMessage? request)
+        public void RegisterNowAsLastRequestTime()
+        {
+            lastRequesttime = DateTime.UtcNow;
+        }
+
+        public bool IsMicrosoftEndpoint(HttpRequestMessage? request)
         {
             if (request?.RequestUri?.Host?.Contains(".sharepoint", StringComparison.InvariantCultureIgnoreCase) == true)
             {
@@ -140,5 +179,20 @@ namespace WikiTraccs.Shared.Http
 
             return false;
         }
+
+        public bool IsAtlassianEndpoint(HttpRequestMessage? request)
+        {
+            if (request?.RequestUri?.Host?.Contains(".atlassian", StringComparison.InvariantCultureIgnoreCase) == true)
+            {
+                return true;
+            }
+            // heu note: implicit knowledge: we add this header
+            if (request?.Headers.NonValidated.Contains("X-Atlassian-Token") == true)
+            {
+                return true;
+            }
+            return false;
+        }
+
     }
 }
