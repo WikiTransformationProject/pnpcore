@@ -1,5 +1,6 @@
 ﻿#nullable enable
 using System;
+using System.Diagnostics;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,7 +15,7 @@ namespace WikiTraccs.Shared.Http
         // same thing as for Microsoft, but for Atlassian
         public static AwaitableGate AtlassianInstance { get; private set; } = new();
 
-        private DateTime lastRequesttime = DateTime.MinValue;
+        private DateTime lastRequesttime = DateTime.UtcNow.AddMinutes(-60);
 #if DEBUG
         public int? MaxRequestsPerSecond { get; set; } = null;
 #else
@@ -43,7 +44,7 @@ namespace WikiTraccs.Shared.Http
             }
         }
 
-        public async Task<int> WaitUntilNextRequestAllowed(CancellationToken cancellationToken = default)
+        public int BumpWaitTimeToInternalRateLimiting()
         {
             if (!MaxRequestsPerSecond.HasValue || MaxRequestsPerSecond.Value <= 0)
             {
@@ -53,7 +54,7 @@ namespace WikiTraccs.Shared.Http
             var waitTimeBetweenRequestsMs = 1000.0 / MaxRequestsPerSecond.Value;
             var alreadyPassedWaitTimeSinceLastRequest = (DateTime.UtcNow - lastRequesttime).TotalMilliseconds;
             var waitTimeLeftMs = (int)Math.Ceiling(waitTimeBetweenRequestsMs - alreadyPassedWaitTimeSinceLastRequest);
-            if (DateTime.UtcNow + TimeSpan.FromMilliseconds(waitTimeLeftMs) < releaseTimeUtc)
+            if (waitTimeLeftMs < 0 || DateTime.UtcNow + TimeSpan.FromMilliseconds(waitTimeLeftMs) <= releaseTimeUtc)
             {
                 // already waiting long enough? fine, nothing to do
                 return 0;
@@ -61,8 +62,11 @@ namespace WikiTraccs.Shared.Http
             // otherwise: wait
             if (waitTimeLeftMs > 0)
             {
+                if (waitTimeLeftMs > 1000)
+                {
+                    Debugger.Break();
+                }
                 SetWaitTime(waitTimeLeftMs);
-                await WaitAsync(cancellationToken).ConfigureAwait(false);
                 return waitTimeLeftMs;
             }
             return 0;
