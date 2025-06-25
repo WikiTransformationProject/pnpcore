@@ -1,5 +1,7 @@
-﻿#nullable enable
+#nullable enable
+using Microsoft.Extensions.Logging;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net.Http;
 using System.Threading;
@@ -7,6 +9,8 @@ using System.Threading.Tasks;
 
 namespace WikiTraccs.Shared.Http
 {
+
+    public record RunningRequestInfo(string Uri, DateTime StartTimeUtc, TimeSpan? TimeoutForLogging);
     public class AwaitableGate
     {
         // a static gate to apply throttling across all requests - in PnP.Core and PnP.Framework!
@@ -14,8 +18,61 @@ namespace WikiTraccs.Shared.Http
         public static AwaitableGate MicrosoftInstance { get; private set; } = new();
         // same thing as for Microsoft, but for Atlassian
         public static AwaitableGate AtlassianInstance { get; private set; } = new();
+        private static Dictionary<long, RunningRequestInfo> RunningRequests = new();
+        private static Timer? monitoringTimer;
+        public static ILogger? Logger { get; set; }
+        private static HashSet<long> warnedRequests = new();
+        private static readonly object monitoringLock = new object();
 
-        private DateTime lastRequesttime = DateTime.UtcNow.AddMinutes(-60);
+        static AwaitableGate()
+        {
+            SetupRequestMonitoring();
+        }
+
+        private static void SetupRequestMonitoring()
+        {
+            monitoringTimer = new Timer(static (_) =>
+            {
+                try
+                {
+                    CheckForLongRunningRequests();
+                }
+                catch (Exception ex)
+                {
+                    Logger?.LogWarning($"Request monitoring error: {ex.Message}");
+                }
+            }, null, 2000, 2000);
+        }
+
+        private static void CheckForLongRunningRequests()
+        {
+            var currentTimeUtc = DateTime.UtcNow;
+            var requestsToWarn = new List<(long Id, RunningRequestInfo Info)>();
+
+            lock (RunningRequests)
+            {
+                foreach (var kvp in RunningRequests)
+                {
+                    var elapsed = currentTimeUtc - kvp.Value.StartTimeUtc;
+                    if (elapsed.TotalSeconds >= 10.0)
+                    {
+                        lock (monitoringLock)
+                        {
+                            warnedRequests.Add(kvp.Key);
+                            requestsToWarn.Add((kvp.Key, kvp.Value));
+                        }
+                    }
+                }
+            }
+
+            foreach (var (_, info) in requestsToWarn)
+            {
+                var elapsed = currentTimeUtc - info.StartTimeUtc;
+                Logger?.LogInformation($"[SLOW REQUEST] Request to '{info.Uri}' has been running for {elapsed.TotalSeconds:F1} seconds{(info.TimeoutForLogging.HasValue ? $" (configured timeout is {info.TimeoutForLogging.Value.TotalSeconds:F0}s; but might be more if retrying request)" : "")}");
+            }
+        }
+
+        private DateTime lastRequestTimeUtc = DateTime.UtcNow.AddMinutes(-60);
 #if DEBUG
         public int? MaxRequestsPerSecond { get; set; } = null;
 #else
@@ -44,7 +101,7 @@ namespace WikiTraccs.Shared.Http
             }
         }
 
-        public int BumpWaitTimeToInternalRateLimiting()
+        public int BumpWaitTimeToConfiguredRateLimit()
         {
             if (!MaxRequestsPerSecond.HasValue || MaxRequestsPerSecond.Value <= 0)
             {
@@ -52,7 +109,7 @@ namespace WikiTraccs.Shared.Http
             }
 
             var waitTimeBetweenRequestsMs = 1000.0 / MaxRequestsPerSecond.Value;
-            var alreadyPassedWaitTimeSinceLastRequest = (DateTime.UtcNow - lastRequesttime).TotalMilliseconds;
+            var alreadyPassedWaitTimeSinceLastRequest = (DateTime.UtcNow - lastRequestTimeUtc).TotalMilliseconds;
             var waitTimeLeftMs = (int)Math.Ceiling(waitTimeBetweenRequestsMs - alreadyPassedWaitTimeSinceLastRequest);
             if (waitTimeLeftMs < 0 || DateTime.UtcNow + TimeSpan.FromMilliseconds(waitTimeLeftMs) <= releaseTimeUtc)
             {
@@ -70,6 +127,36 @@ namespace WikiTraccs.Shared.Http
                 return waitTimeLeftMs;
             }
             return 0;
+        }
+
+        public static long StartRequest(string? uri, TimeSpan? timeoutForLogging)
+        {
+            if (null == uri)
+            {
+                return 0;
+            }
+            var id = Random.Shared.NextInt64();
+            lock (RunningRequests)
+            {
+                RunningRequests[id] = new(uri, DateTime.UtcNow, timeoutForLogging);
+            }
+            return id;
+        }
+
+        public static bool EndRequest(long id)
+        {
+            lock (RunningRequests)
+            {
+                var removed = RunningRequests.Remove(id);
+                if (removed)
+                {
+                    lock (monitoringLock)
+                    {
+                        warnedRequests.Remove(id);
+                    }
+                }
+                return removed;
+            }
         }
 
         public void SetWaitTime(int waitTimeMilliseconds)
@@ -167,7 +254,7 @@ namespace WikiTraccs.Shared.Http
 
         public void RegisterNowAsLastRequestTime()
         {
-            lastRequesttime = DateTime.UtcNow;
+            lastRequestTimeUtc = DateTime.UtcNow;
         }
 
         public bool IsMicrosoftEndpoint(HttpRequestMessage? request)

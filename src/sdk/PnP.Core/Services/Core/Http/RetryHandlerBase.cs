@@ -1,5 +1,4 @@
 ﻿using Microsoft.Extensions.Logging;
-using PnP.Core.Services.Core;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -35,6 +34,7 @@ namespace PnP.Core.Services
             {
                 GlobalSettings.Logger = log;
             }
+            AwaitableGate.Logger = GlobalSettings.Logger;
         }
         #endregion
 
@@ -48,135 +48,151 @@ namespace PnP.Core.Services
         {
             int retryCount = 0;
 
-            while (true)
+            
+            var id = AwaitableGate.StartRequest(request.RequestUri.ToString(), TimeSpan.FromSeconds(GlobalSettings.HttpTimeout));
+            try
             {
-                HttpResponseMessage response = null;
-                Exception innermostEx = null;
-
-                // Throw an exception if we've requested to cancel the operation
-                cancellationToken.ThrowIfCancellationRequested();
-
-                try
+                while (true)
                 {
-                    innermostEx = null;
+                    HttpResponseMessage response = null;
+                    Exception innermostEx = null;
 
-                    // Depending on the stored request rate limit headers we'll briefly pause before executing the request
-                    // The purpose here is to prevent getting throttled and as such achieve a higher overall throughput
-                    if (eventHub != null && eventHub.RequestRateLimitWaitAsync != null)
-                    {
-                        // If using a custom event then that's overruling the native handler
-                        await eventHub.RequestRateLimitWaitAsync.Invoke(cancellationToken).ConfigureAwait(false);
-                    }
-                    else if (rateLimiter != null)
-                    {
-                        await rateLimiter.WaitAsync(cancellationToken).ConfigureAwait(false);
-                    }
-                    await AwaitableGate.MicrosoftInstance.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    // Throw an exception if we've requested to cancel the operation
+                    cancellationToken.ThrowIfCancellationRequested();
 
-                    response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
+                    try
+                    {
+                        innermostEx = null;
 
-                    // If we received request rate limit headers then store them
-                    if (eventHub != null && eventHub.RequestRateLimitUpdate != null)
-                    {
-                        // If using a custom event then that's overruling the native handler
-                        eventHub.RequestRateLimitUpdate.Invoke(new RateLimitEvent(request, response));
-                    }
-                    else
-                    {
-                        rateLimiter?.UpdateWindow(response);
-                    }
-                    
-                    if (!ShouldRetry(response.StatusCode))
-                    {
-                        return response;
-                    }
-
-                    if (retryCount >= MaxRetries)
-                    {
-                        // Drain response content to free connections. Need to perform this
-                        // before retry attempt and before the TooManyRetries ServiceException.
-                        if (response.Content != null)
+                        // Depending on the stored request rate limit headers we'll briefly pause before executing the request
+                        // The purpose here is to prevent getting throttled and as such achieve a higher overall throughput
+                        if (eventHub != null && eventHub.RequestRateLimitWaitAsync != null)
                         {
-#if NET5_0_OR_GREATER
-                            await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
-#else
-                            await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
-#endif
+                            // If using a custom event then that's overruling the native handler
+                            await eventHub.RequestRateLimitWaitAsync.Invoke(cancellationToken).ConfigureAwait(false);
+                        }
+                        else if (rateLimiter != null)
+                        {
+                            await rateLimiter.WaitAsync(cancellationToken).ConfigureAwait(false);
+                        }
+                        if (AwaitableGate.MicrosoftInstance.WaitSecsLeft > 3)
+                        {
+                            if (GlobalSettings != null && GlobalSettings.Logger != null)
+                            {
+                                GlobalSettings.Logger.LogInformation($"[THROTTLED] Waiting {AwaitableGate.MicrosoftInstance.WaitSecsLeft} seconds before continuing (AwaitableGate)");
+                            }
+                        }
+                        await AwaitableGate.MicrosoftInstance.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+                        response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
+
+                        // If we received request rate limit headers then store them
+                        if (eventHub != null && eventHub.RequestRateLimitUpdate != null)
+                        {
+                            // If using a custom event then that's overruling the native handler
+                            eventHub.RequestRateLimitUpdate.Invoke(new RateLimitEvent(request, response));
+                        }
+                        else
+                        {
+                            rateLimiter?.UpdateWindow(response);
+                        }
+                        
+                        if (!ShouldRetry(response.StatusCode))
+                        {
+                            return response;
                         }
 
-                        throw new ServiceException(ErrorType.TooManyRetries, (int)response.StatusCode,
-                            string.Format(PnPCoreResources.Exception_ServiceException_MaxRetries, retryCount));
+                        if (retryCount >= MaxRetries)
+                        {
+                            // Drain response content to free connections. Need to perform this
+                            // before retry attempt and before the TooManyRetries ServiceException.
+                            if (response.Content != null)
+                            {
+    #if NET5_0_OR_GREATER
+                                await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+    #else
+                                await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+    #endif
+                            }
+
+                            throw new ServiceException(ErrorType.TooManyRetries, (int)response.StatusCode,
+                                string.Format(PnPCoreResources.Exception_ServiceException_MaxRetries, retryCount));
+                        }
+
+                        if (GlobalSettings != null && GlobalSettings.Logger != null)
+                        {
+                            GlobalSettings.Logger.LogInformation($"{(response.StatusCode == HttpStatusCode.TooManyRequests ? "[THROTTLED] " : "")}Retrying request {request.RequestUri} due to status code {response.StatusCode}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        // Find innermost exception and check if it is a SocketException
+                        innermostEx = ex;
+
+                        while (innermostEx.InnerException != null) innermostEx = innermostEx.InnerException;
+                        if (!(innermostEx is SocketException))
+                        {
+                            throw;
+                        }
+
+                        // Hostname unknown error code 11001 should not be retried
+                        if ((innermostEx as SocketException).ErrorCode == 11001)
+                        {
+                            throw;
+                        }
+
+                        if (retryCount >= MaxRetries)
+                        {
+                            throw;
+                        }
+
+                        string errorMessage = innermostEx.Message;
+
+                        if (GlobalSettings != null && GlobalSettings.Logger != null)
+                        {
+                            GlobalSettings.Logger.LogInformation($"Retrying request {request.RequestUri} due to exception {innermostEx.GetType()}: {innermostEx.Message}");
+                        }
                     }
 
-                    if (GlobalSettings != null && GlobalSettings.Logger != null)
+                    // Drain response content to free connections. Need to perform this
+                    // before retry attempt and before the TooManyRetries ServiceException.
+                    if (response?.Content != null)
                     {
-                        GlobalSettings.Logger.LogInformation($"{(response.StatusCode == HttpStatusCode.TooManyRequests ? "[THROTTLED] " : "")}Retrying request {request.RequestUri} due to status code {response.StatusCode}");
+    #if NET5_0_OR_GREATER
+                        await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+    #else
+                        await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+    #endif
                     }
+
+                    // Call Delay method to get delay time from response's Retry-After header or by exponential backoff 
+                    TimeSpan delayTimeSpan = CalculateWaitTime(response, retryCount, DelayInSeconds);
+
+                    
+                    //Task delay = Task.Delay(delayTimeSpan, cancellationToken);
+
+                    // Notify subscribers
+                    eventHub.RequestRetry?.Invoke(new RetryEvent(request, response != null ? (int)response.StatusCode : 0, (int)delayTimeSpan.TotalSeconds, innermostEx));
+
+                    // general clone request with internal CloneAsync (see CloneAsync for details) extension method 
+                    // do not dispose this request as that breaks the request cloning
+                    request = await request.CloneAsync().ConfigureAwait(false);
+                    // Increase retryCount and then update Retry-Attempt in request header if needed
+                    retryCount++;
+                    AddOrUpdateRetryAttempt(request, retryCount);
+
+                    if (GlobalSettings != null && GlobalSettings.Logger != null && delayTimeSpan.TotalSeconds > 0)
+                    {
+                        GlobalSettings.Logger.LogInformation($"[THROTTLED] Waiting {delayTimeSpan.TotalSeconds} seconds before retrying");
+                    }
+                    // Delay time
+                    AwaitableGate.MicrosoftInstance.SetWaitTime((int)delayTimeSpan.TotalMilliseconds);
+                    await AwaitableGate.MicrosoftInstance.WaitAsync(cancellationToken).ConfigureAwait(false);
+    //                await delay.ConfigureAwait(false);
                 }
-                catch (Exception ex)
-                {
-                    // Find innermost exception and check if it is a SocketException
-                    innermostEx = ex;
-
-                    while (innermostEx.InnerException != null) innermostEx = innermostEx.InnerException;
-                    if (!(innermostEx is SocketException))
-                    {
-                        throw;
-                    }
-
-                    // Hostname unknown error code 11001 should not be retried
-                    if ((innermostEx as SocketException).ErrorCode == 11001)
-                    {
-                        throw;
-                    }
-
-                    if (retryCount >= MaxRetries)
-                    {
-                        throw;
-                    }
-
-                    string errorMessage = innermostEx.Message;
-
-                    if (GlobalSettings != null && GlobalSettings.Logger != null)
-                    {
-                        GlobalSettings.Logger.LogInformation($"Retrying request {request.RequestUri} due to exception {innermostEx.GetType()}: {innermostEx.Message}");
-                    }
-                }
-
-                // Drain response content to free connections. Need to perform this
-                // before retry attempt and before the TooManyRetries ServiceException.
-                if (response?.Content != null)
-                {
-#if NET5_0_OR_GREATER
-                    await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
-#else
-                    await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
-#endif
-                }
-
-                // Call Delay method to get delay time from response's Retry-After header or by exponential backoff 
-                TimeSpan delayTimeSpan = CalculateWaitTime(response, retryCount, DelayInSeconds);
-
-                if (GlobalSettings != null && GlobalSettings.Logger != null)
-                {
-                    GlobalSettings.Logger.LogInformation($"[THROTTLED] Waiting {delayTimeSpan.TotalSeconds} seconds before retrying");
-                }
-                Task delay = Task.Delay(delayTimeSpan, cancellationToken);
-
-                // Notify subscribers
-                eventHub.RequestRetry?.Invoke(new RetryEvent(request, response != null ? (int)response.StatusCode : 0, (int)delayTimeSpan.TotalSeconds, innermostEx));
-
-                // general clone request with internal CloneAsync (see CloneAsync for details) extension method 
-                // do not dispose this request as that breaks the request cloning
-                request = await request.CloneAsync().ConfigureAwait(false);
-                // Increase retryCount and then update Retry-Attempt in request header if needed
-                retryCount++;
-                AddOrUpdateRetryAttempt(request, retryCount);
-
-                // Delay time
-                AwaitableGate.MicrosoftInstance.SetWaitTime((int)delayTimeSpan.TotalMilliseconds);
-                await AwaitableGate.MicrosoftInstance.WaitAsync().ConfigureAwait(false);
-//                await delay.ConfigureAwait(false);
+            } finally
+            {
+                AwaitableGate.EndRequest(id);
             }
         }
 
