@@ -77,7 +77,7 @@ namespace PnP.Core.Model.SharePoint
             var logger = Section?.Page?.PnPContext?.Logger;
             try
             {
-                logger?.LogWarning("PageWebPart.RenderHtmlProperties: expected string but got {ValueKind}. Falling back to safe conversion. Value: {Value}", v.ValueKind, v.ToString());
+                logger?.LogWarning("PageWebPart.RenderHtmlProperties: expected string but got {ValueKind}. Falling back to safe conversion. Value: {Value} [WT]", v.ValueKind, v.ToString());
             }
             catch
             {
