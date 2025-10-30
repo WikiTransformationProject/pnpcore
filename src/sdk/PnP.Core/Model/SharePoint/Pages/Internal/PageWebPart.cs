@@ -1,9 +1,11 @@
-﻿using AngleSharp.Dom;
+using AngleSharp.Dom;
 using System;
 using System.Linq;
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Collections.Generic;
+using Microsoft.Extensions.Logging;
 
 namespace PnP.Core.Model.SharePoint
 {
@@ -58,6 +60,84 @@ namespace PnP.Core.Model.SharePoint
                 throw new ArgumentNullException(nameof(component));
             }
             Import(component);
+        }
+
+        // HEU: tested by WebPartWrapper_Clone_Throws_For_NonString_SearchablePlainTexts_Value 
+        private string GetStringSafe(JsonElement v)
+        {
+            if (v.ValueKind == JsonValueKind.String)
+            {
+                return v.GetString();
+            }
+            if (v.ValueKind == JsonValueKind.Null)
+            {
+                return string.Empty;
+            }
+
+            var logger = Section?.Page?.PnPContext?.Logger;
+            try
+            {
+                logger?.LogWarning("PageWebPart.RenderHtmlProperties: expected string but got {ValueKind}. Falling back to safe conversion. Value: {Value}", v.ValueKind, v.ToString());
+            }
+            catch
+            {
+            }
+
+            if (v.ValueKind == JsonValueKind.Object)
+            {
+                if (v.TryGetProperty("value", out var valueProp))
+                {
+                    return GetStringSafe(valueProp);
+                }
+
+                string onlyString = null;
+                int stringProps = 0;
+                foreach (var p in v.EnumerateObject())
+                {
+                    if (p.Value.ValueKind == JsonValueKind.String)
+                    {
+                        onlyString ??= p.Value.GetString();
+                        stringProps++;
+                    }
+                }
+                if (stringProps == 1 && onlyString != null)
+                {
+                    return onlyString;
+                }
+
+                return v.ToString();
+            }
+
+            if (v.ValueKind == JsonValueKind.Array)
+            {
+                var strings = new List<string>();
+                foreach (var item in v.EnumerateArray())
+                {
+                    if (item.ValueKind == JsonValueKind.String)
+                    {
+                        strings.Add(item.GetString() ?? string.Empty);
+                    }
+                    else if (item.ValueKind == JsonValueKind.Object && item.TryGetProperty("value", out var val2))
+                    {
+                        strings.Add(GetStringSafe(val2));
+                    }
+                }
+                if (strings.Count > 0)
+                {
+                    return string.Join(" ", strings.Where(s => !string.IsNullOrEmpty(s)));
+                }
+
+                using (var e = v.EnumerateArray().GetEnumerator())
+                {
+                    if (e.MoveNext())
+                    {
+                        return GetStringSafe(e.Current);
+                    }
+                }
+                return string.Empty;
+            }
+
+            return v.ToString();
         }
         #endregion
 
@@ -475,7 +555,7 @@ namespace PnP.Core.Model.SharePoint
                     foreach (var property in searchablePlainTexts.EnumerateObject())
                     {
                         htmlWriter.Append($@"<div data-sp-prop-name=""{property.Name}"" data-sp-searchableplaintext=""true"">");
-                        htmlWriter.Append(property.Value.GetString());
+                        htmlWriter.Append(GetStringSafe(property.Value));
                         htmlWriter.Append("</div>");
                     }
                 }
@@ -486,9 +566,9 @@ namespace PnP.Core.Model.SharePoint
                     {
                         htmlWriter.Append($@"<img data-sp-prop-name=""{property.Name}""");
 
-                        if (!string.IsNullOrEmpty(property.Value.ToString()))
+                        if (!string.IsNullOrEmpty(GetStringSafe(property.Value)))
                         {
-                            htmlWriter.Append($@" src=""{property.Value.GetString()}""");
+                            htmlWriter.Append($@" src=""{GetStringSafe(property.Value)}""");
                         }
                         htmlWriter.Append("></img>");
                     }
@@ -500,7 +580,7 @@ namespace PnP.Core.Model.SharePoint
                     {
                         foreach (var property in links.EnumerateObject())
                         {
-                            htmlWriter.Append($@"<a data-sp-prop-name=""{property.Name}"" href=""{property.Value.GetString()}""></a>");
+                            htmlWriter.Append($@"<a data-sp-prop-name=""{property.Name}"" href=""{GetStringSafe(property.Value)}""></a>");
                         }
                     }
                 }
@@ -509,7 +589,7 @@ namespace PnP.Core.Model.SharePoint
                 {
                     foreach (var property in htmlStrings.EnumerateObject())
                     {
-                        htmlWriter.Append($@"<div data-sp-prop-name=""{property.Name}"">{property.Value.GetString()}</div>");
+                        htmlWriter.Append($@"<div data-sp-prop-name=""{property.Name}"">{GetStringSafe(property.Value)}</div>");
                     }
                 }
             }
@@ -518,6 +598,7 @@ namespace PnP.Core.Model.SharePoint
                 htmlWriter.Append(HtmlPropertiesData);
             }
         }
+
         #endregion
 
         #region Internal and private methods
