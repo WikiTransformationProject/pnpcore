@@ -41,7 +41,7 @@ namespace WikiTraccs.Shared.Http
                 {
                     Logger?.LogWarning($"Request monitoring error: {ex.Message}");
                 }
-            }, null, 2000, 2000);
+            }, null, 3000, 3000);
         }
 
         private static void CheckForLongRunningRequests()
