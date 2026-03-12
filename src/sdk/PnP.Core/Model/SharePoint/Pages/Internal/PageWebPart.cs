@@ -531,7 +531,7 @@ namespace PnP.Core.Model.SharePoint
             else
             {
                 html.Append($@"<div {CanvasControlAttribute}=""{CanvasControlData}"" {CanvasDataVersionAttribute}=""{CanvasDataVersion}"" {ControlDataAttribute}=""{JsonControlData.Replace("\"", "&quot;")}"">");
-                html.Append($@"<div {WebPartAttribute}=""{WebPartData}"" {WebPartDataVersionAttribute}=""{DataVersion}"" {WebPartDataAttribute}=""{JsonWebPartData.Replace("\"", "&quot;").Replace("<", "&lt;").Replace(">", "&gt;")}"">");
+                html.Append($@"<div {WebPartAttribute}=""{WebPartData}"" {WebPartDataVersionAttribute}=""{DataVersion}"" {WebPartDataAttribute}=""{JsonWebPartData.Replace("&", "&amp;").Replace("\"", "&quot;").Replace("<", "&lt;").Replace(">", "&gt;")}"">");
                 html.Append($@"<div {WebPartComponentIdAttribute}=""{WebPartId}""></div>");
                 html.Append($@"<div {WebPartHtmlPropertiesAttribute}=""{HtmlProperties}"">");
                 RenderHtmlProperties(ref html);
@@ -662,7 +662,12 @@ namespace PnP.Core.Model.SharePoint
                 return;
             }
 
-            var wpJObject = JsonSerializer.Deserialize<JsonElement>(decodedWebPart);
+            // hardening applied against deserialization issues (we ran into) from https://github.com/pnp/pnpcore/commit/8f4909fe2e1dbbd665b5378171cdfbe9b36c16f1
+            if (!SafeDeserializeDecoded(decodedWebPart, out var wpJObject))
+            {
+                Title = "Failed to deserialize WebPart";
+                return;
+            }            
 
             if (wpJObject.TryGetProperty("title", out JsonElement titleProperty))
             {
@@ -743,6 +748,62 @@ namespace PnP.Core.Model.SharePoint
                 ACECardSize = ACECardSizeElement.GetString();
             }
         }
+
+        private static bool SafeDeserializeDecoded(string decodedWebPart, out JsonElement wpJObject)
+        {
+            while (true)
+            {
+                try
+                {
+                    wpJObject = JsonSerializer.Deserialize<JsonElement>(decodedWebPart);
+                    return true;
+                }
+                catch (JsonException ex)
+                {
+                    // Try to fix decoded double quote
+                    if ((ex.Message.Contains("is invalid after a value")
+                      || ex.Message.Contains("is an invalid start of a property name"))
+                     && ex.LineNumber == 0
+                     && ex.BytePositionInLine > 1
+                     )
+                    {
+                        var bytes = Encoding.UTF8.GetBytes(decodedWebPart);
+                        if (ex.BytePositionInLine < bytes.Length)
+                        {
+                            var replacedQuote = false;
+                            for (int pos = (int)ex.BytePositionInLine.Value - 1; pos > 0; pos--)
+                            {
+                                if (Char.IsWhiteSpace((char)bytes[pos])
+                                 || bytes[pos] == ',')
+                                    continue;
+                                if (bytes[pos] == '"')
+                                {
+                                    // Found a double quote we can try to escape
+                                    //
+                                    var builder = new StringBuilder(decodedWebPart.Length + 1);
+                                    builder.Append(Encoding.UTF8.GetString(bytes, 0, pos));
+                                    builder.Append("\\\"");
+                                    builder.Append(Encoding.UTF8.GetString(bytes, pos + 1, bytes.Length - pos - 1));
+                                    replacedQuote = true;
+                                    decodedWebPart = builder.ToString();
+                                }
+                                break;
+                            }
+                            if (replacedQuote)
+                            {
+                                continue;
+                            }
+                        }
+                    }
+
+                    // If we reach here then we cannot fix the issue, so return false
+                    // and set the wpJObject to an empty JsonElement
+                    //
+                    wpJObject = new JsonElement();
+                    return false;
+                }
+            }
+        }        
 
         private void SetPropertiesJson(JsonElement parsedJson)
         {
