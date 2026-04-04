@@ -346,10 +346,15 @@ namespace PnP.Core.Model.SharePoint
                 }
                 else
                 {
+                    // HEU 2026-04-04: always set addedFromPersistedData to true for newly created web parts.
+                    // The default (false) causes SharePoint's editor to treat the web part as "just added",
+                    // which opens the file picker for Image web parts and causes other unwanted side effects
+                    // (auto-focus, telemetry, minimum height enforcement in full-width sections).
+                    // See Architecture/spo-image-workings.md section 7b for the full analysis.
+                    controlData.AddedFromPersistedData = true;
                     if (!string.IsNullOrEmpty(RichTextEditorInstanceId))
                     {
                         controlData.RteInstanceId = RichTextEditorInstanceId;
-                        controlData.AddedFromPersistedData = true;
                     }
                 }
 
