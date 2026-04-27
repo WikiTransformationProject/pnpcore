@@ -707,5 +707,51 @@ namespace PnP.Core.Utilities
             return mappings.Value.TryGetValue(str, out mimeType);
         }
 
+        /// <summary>
+        /// HEU: Inverse direction of <see cref="TryGetMimeType"/>. Returns the
+        /// canonical file extension (e.g. ".png") for a given MIME type
+        /// (e.g. "image/png"). The underlying mapping is built as
+        /// extension → MIME, then a reverse pass adds MIME → extension for
+        /// each MIME the first time it's seen — so this lookup hits the
+        /// same table without an extra data structure. MIME type
+        /// comparison is case-insensitive (the dictionary uses
+        /// OrdinalIgnoreCase).
+        ///
+        /// <para>
+        /// <b>Multi-extension MIME caveat.</b> When a MIME maps to several
+        /// extensions in the source-of-truth literal above (e.g.
+        /// <c>image/jpeg</c> has <c>.jpe</c>, <c>.jpeg</c>, <c>.jpg</c>;
+        /// <c>application/octet-stream</c> has 30+), the reverse pass
+        /// (lines 664-670) only writes the FIRST extension because of the
+        /// <c>!mappings.ContainsKey</c> guard. "First" means
+        /// <see cref="Dictionary{TKey, TValue}"/> insertion order, which
+        /// equals source-file declaration order. So <c>image/jpeg</c>
+        /// resolves to <c>.jpe</c> here, not <c>.jpg</c>; and
+        /// <c>application/octet-stream</c> resolves to <c>.aaf</c>, not
+        /// <c>.bin</c>. Most callers want a different "preferred"
+        /// extension for those — handle that by checking the most-likely
+        /// MIMEs in your own code BEFORE calling this method (the
+        /// <c>WhiteboardArtifactNaming.ExtensionForMediaType</c> in
+        /// <c>WikiTraccs.Shared</c> is the reference pattern).
+        /// </para>
+        /// </summary>
+        /// <param name="mimeType">The MIME type, e.g. "image/png" or "application/pdf".</param>
+        /// <param name="extension">The canonical extension including leading dot, e.g. ".png". Empty when no mapping exists. See "Multi-extension MIME caveat" above for ambiguous-MIME behaviour.</param>
+        /// <returns>True iff a mapping exists.</returns>
+        public static bool TryGetExtension(string mimeType, out string extension)
+        {
+            if (mimeType == null)
+            {
+                throw new ArgumentNullException(nameof(mimeType));
+            }
+            if (mappings.Value.TryGetValue(mimeType, out var mapped) && mapped.StartsWith(dot))
+            {
+                extension = mapped;
+                return true;
+            }
+            extension = string.Empty;
+            return false;
+        }
+
     }
 }
