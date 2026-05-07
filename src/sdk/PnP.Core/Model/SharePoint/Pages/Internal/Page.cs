@@ -1692,6 +1692,28 @@ namespace PnP.Core.Model.SharePoint
             return !PageListItem.Values.ContainsKey(fieldName) || string.IsNullOrEmpty(PageListItem[fieldName]?.ToString());
         }
 
+        // WikiTraccs custom site-page content type ID, kept here next to the PnP-Core allowlist
+        // so the article-page CT preservation logic in SaveAsync stays self-contained. Mirrors
+        // SpoIds.SitePageWikiTraccsContentTypeId on the WikiTraccs side; if either changes the
+        // other must follow.
+        private const string WikiTraccsSitePageContentTypeId =
+            "0x0101009D1CB255DA76424F860D91F20E6C411800C7482925E428D14785466663A30C9B33";
+
+        // Returns true for content type IDs SaveAsync is allowed to leave untouched on an
+        // existing article page: the modern-article default and the WikiTraccs custom CT.
+        // Any other value (empty, missing, or some unknown CT) is normalized back to
+        // ModernArticlePage by the caller, which both fixes the #724 broken-page case and
+        // prevents foreign CTs from surviving a round-trip.
+        private static bool IsKnownExistingContentTypeIdToPreserve(string contentTypeId)
+        {
+            if (string.IsNullOrEmpty(contentTypeId))
+            {
+                return false;
+            }
+            return contentTypeId.Equals(PageConstants.ModernArticlePage, StringComparison.OrdinalIgnoreCase)
+                || contentTypeId.Equals(WikiTraccsSitePageContentTypeId, StringComparison.OrdinalIgnoreCase);
+        }
+
         public async Task<string> SaveAsync(string pageName = null, bool HEUassumeListItemMissing = false)
         {
             if (string.IsNullOrEmpty(pageName))
@@ -1815,12 +1837,13 @@ namespace PnP.Core.Model.SharePoint
             {
                 PageListItem[PageConstants.ContentTypeId] = PageConstants.SpacesPage;
             }
-            else if (IsPageListItemValueMissingOrEmpty(PageConstants.ContentTypeId))
+            else if (!IsKnownExistingContentTypeIdToPreserve(PageListItem[PageConstants.ContentTypeId]?.ToString()))
             {
-                // Only fill in the modern article default when the field is missing/empty
-                // (the broken-page case the #724 mitigation targets). Preserves any custom
-                // content type already set on existing pages — notably "Site Page (transformed
-                // by WikiTraccs)" — which would otherwise be silently clobbered on every save.
+                // Allowlist behavior: keep ModernArticlePage and the WikiTraccs custom CT
+                // ("Site Page (transformed by WikiTraccs)") in place; reset everything else
+                // (empty, missing, or unknown) back to the modern article default. The
+                // broken-page mitigation from #724 still applies for empty/missing inputs;
+                // unknown values get normalized too so foreign CTs can't sneak through.
                 PageListItem[PageConstants.ContentTypeId] = PageConstants.ModernArticlePage;
             }
 
