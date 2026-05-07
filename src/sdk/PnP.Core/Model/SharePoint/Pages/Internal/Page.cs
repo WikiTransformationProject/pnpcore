@@ -1815,8 +1815,12 @@ namespace PnP.Core.Model.SharePoint
             {
                 PageListItem[PageConstants.ContentTypeId] = PageConstants.SpacesPage;
             }
-            else
+            else if (IsPageListItemValueMissingOrEmpty(PageConstants.ContentTypeId))
             {
+                // Only fill in the modern article default when the field is missing/empty
+                // (the broken-page case the #724 mitigation targets). Preserves any custom
+                // content type already set on existing pages — notably "Site Page (transformed
+                // by WikiTraccs)" — which would otherwise be silently clobbered on every save.
                 PageListItem[PageConstants.ContentTypeId] = PageConstants.ModernArticlePage;
             }
 
