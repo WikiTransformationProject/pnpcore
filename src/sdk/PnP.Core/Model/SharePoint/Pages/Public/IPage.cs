@@ -612,6 +612,14 @@ namespace PnP.Core.Model.SharePoint
         /// <param name="imageOptions">Options to configure the inline image when being added</param>
         /// <returns>Html snippet to be appended to the text editor content</returns>
         public string GetInlineImage(IPageText textEditorInstance, string serverRelativeUrl, PageImageOptions imageOptions = null);
+
+        // written by LLM
+        /// <summary>
+        /// Serialises the current in-memory page state to the persisted SharePoint canvas-content HTML.
+        /// Same output that <see cref="SaveAsync"/> would write to the CanvasContent1 list-item field.
+        /// Useful for pre-save verification (sentinel checks) without committing the change.
+        /// </summary>
+        public string ToHtml();
     }
 
 }

@@ -252,6 +252,46 @@ namespace PnP.Core.Model.SharePoint
         /// </summary>
         public string RichTextEditorInstanceId { get; set; }
 
+        // written by LLM
+        /// <summary>
+        /// Value of the "data-sp-controldata" attribute's `addedFromPersistedData` flag. SpControlData is
+        /// populated by FromHtml when a page is loaded from persisted page HTML. Both getter and setter
+        /// throw when SpControlData is null:
+        ///   - The getter must NOT silently return `false`. ToHtml() at line 354 of this file defaults the
+        ///     serialised value to `true` for freshly created (SpControlData == null) controls — returning
+        ///     `false` from this getter would contradict what ToHtml emits for the same instance, breaking
+        ///     any read-then-roundtrip reasoning.
+        ///   - Returning `true` to "match ToHtml" would also be misleading, because there is no
+        ///     SpControlData object to back the value.
+        ///   - Throwing is the only honest behaviour: callers are expected to operate on loaded pages
+        ///     only. If the exception fires, that surfaces a real misuse rather than masking it.
+        ///   - The setter refuses to silently materialize an SpControlData object, since doing so would
+        ///     change ToHtml() behavior in subtle ways.
+        /// </summary>
+        public bool AddedFromPersistedData
+        {
+            get
+            {
+                if (null == SpControlData)
+                {
+                    throw new InvalidOperationException(
+                        "Cannot read AddedFromPersistedData when SpControlData is null. " +
+                        "This typically indicates the web part was not loaded from persisted page HTML.");
+                }
+                return SpControlData.AddedFromPersistedData;
+            }
+            set
+            {
+                if (null == SpControlData)
+                {
+                    throw new InvalidOperationException(
+                        "Cannot set AddedFromPersistedData when SpControlData is null. " +
+                        "This typically indicates the web part was not loaded from persisted page HTML.");
+                }
+                SpControlData.AddedFromPersistedData = value;
+            }
+        }
+
         internal string ACEIconProperty { get; set; }
 
         internal string ACECardSize { get; set; }

@@ -97,5 +97,13 @@ namespace PnP.Core.Model.SharePoint
         /// If this webpart is used inline in a text editor then this property points to the editor using it
         /// </summary>
         public string RichTextEditorInstanceId { get; set; }
+
+        // written by LLM
+        /// <summary>
+        /// Value of the "data-sp-controldata" attribute's `addedFromPersistedData` field. When the web part
+        /// was loaded from persisted page HTML this reflects the persisted flag; when freshly constructed
+        /// (no SpControlData) the getter and setter throw `InvalidOperationException`.
+        /// </summary>
+        public bool AddedFromPersistedData { get; set; }
     }
 }
