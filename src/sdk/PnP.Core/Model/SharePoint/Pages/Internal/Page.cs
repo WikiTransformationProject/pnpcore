@@ -1692,28 +1692,6 @@ namespace PnP.Core.Model.SharePoint
             return !PageListItem.Values.ContainsKey(fieldName) || string.IsNullOrEmpty(PageListItem[fieldName]?.ToString());
         }
 
-        // WikiTraccs custom site-page content type ID, kept here next to the PnP-Core allowlist
-        // so the article-page CT preservation logic in SaveAsync stays self-contained. Mirrors
-        // SpoIds.SitePageWikiTraccsContentTypeId on the WikiTraccs side; if either changes the
-        // other must follow.
-        private const string WikiTraccsSitePageContentTypeId =
-            "0x0101009D1CB255DA76424F860D91F20E6C411800C7482925E428D14785466663A30C9B33";
-
-        // Returns true for content type IDs SaveAsync is allowed to leave untouched on an
-        // existing article page: the modern-article default and the WikiTraccs custom CT.
-        // Any other value (empty, missing, or some unknown CT) is normalized back to
-        // ModernArticlePage by the caller, which both fixes the #724 broken-page case and
-        // prevents foreign CTs from surviving a round-trip.
-        private static bool IsKnownExistingContentTypeIdToPreserve(string contentTypeId)
-        {
-            if (string.IsNullOrEmpty(contentTypeId))
-            {
-                return false;
-            }
-            return contentTypeId.Equals(PageConstants.ModernArticlePage, StringComparison.OrdinalIgnoreCase)
-                || contentTypeId.Equals(WikiTraccsSitePageContentTypeId, StringComparison.OrdinalIgnoreCase);
-        }
-
         public async Task<string> SaveAsync(string pageName = null, bool HEUassumeListItemMissing = false)
         {
             if (string.IsNullOrEmpty(pageName))
@@ -1833,17 +1811,19 @@ namespace PnP.Core.Model.SharePoint
             }
 
             // Hanlde the basic page configuration for a new modern page, or a broken modern page that is missing the basic configuration (see https://github.com/pnp/pnpframework/issues/724)
+            // Original 2022 mitigation: fill in the modern-article default when the field is
+            // missing/empty (the broken-page case). NEVER overwrite an existing value — that would
+            // silently destroy custom content types (e.g. "Site Page (transformed by WikiTraccs)")
+            // on every save of an existing page. Article-branch missing-or-empty guard mirrors the
+            // Spaces branch above. ContentTypeId may not be in PageListItem.Values for pages
+            // loaded by the standard flow (it's not in the default $select=*), so use ContainsKey
+            // rather than the indexer to avoid KeyNotFoundException.
             if (LayoutType == PageLayoutType.Spaces && IsPageListItemValueMissingOrEmpty(PageConstants.ContentTypeId))
             {
                 PageListItem[PageConstants.ContentTypeId] = PageConstants.SpacesPage;
             }
-            else if (!IsKnownExistingContentTypeIdToPreserve(PageListItem[PageConstants.ContentTypeId]?.ToString()))
+            else if (IsPageListItemValueMissingOrEmpty(PageConstants.ContentTypeId))
             {
-                // Allowlist behavior: keep ModernArticlePage and the WikiTraccs custom CT
-                // ("Site Page (transformed by WikiTraccs)") in place; reset everything else
-                // (empty, missing, or unknown) back to the modern article default. The
-                // broken-page mitigation from #724 still applies for empty/missing inputs;
-                // unknown values get normalized too so foreign CTs can't sneak through.
                 PageListItem[PageConstants.ContentTypeId] = PageConstants.ModernArticlePage;
             }
 
@@ -2023,7 +2003,14 @@ namespace PnP.Core.Model.SharePoint
             }
 
 
-            if ((layoutType == PageLayoutType.Article || LayoutType == PageLayoutType.Spaces) && PageListItem[PageConstants.BannerImageUrlField] != null)
+            // Mirror the DescriptionField guard below: BannerImageUrlField is a site-pages-
+            // specific field that is not guaranteed to be in PageListItem.Values for pages
+            // loaded by the standard flow. The unguarded indexer would throw
+            // KeyNotFoundException on existing-page saves; ContainsKey-gating skips the
+            // banner-thumbnail-fixup block when the field hasn't been loaded.
+            if ((layoutType == PageLayoutType.Article || LayoutType == PageLayoutType.Spaces)
+                && PageListItem.Values.ContainsKey(PageConstants.BannerImageUrlField)
+                && PageListItem[PageConstants.BannerImageUrlField] != null)
             {
                 if (string.IsNullOrEmpty(PageListItem[PageConstants.BannerImageUrlField].ToString()) ||
                     ((PageListItem[PageConstants.BannerImageUrlField] is FieldUrlValue bannerImageUrlFieldValue) &&
@@ -2122,11 +2109,11 @@ namespace PnP.Core.Model.SharePoint
             }
 
             return await pagesLibrary.PnPContext.Web.GetFileByServerRelativeUrlOrDefaultAsync($"{pagesLibrary.RootFolder.ServerRelativeUrl}/{pageName}",
-                    p => p.ListItemAllFields.QueryProperties(p => p.All, 
+                    p => p.ListItemAllFields.QueryProperties(p => p.All,
                         p => p.ParentList.QueryProperties(
                             p => p.Fields.QueryProperties(p => p.InternalName, p => p.FieldTypeKind, p => p.TypeAsString, p => p.Title)
                         )
-                    ), 
+                    ),
                     p => p.ServerRelativeUrl, p => p.ListId).ConfigureAwait(false);
         }
 
