@@ -467,7 +467,8 @@ namespace PnP.Core.Model.SharePoint
                 }
 
                 // Set the web part preview image url
-                if (ServerProcessedContent.TryGetProperty("imageSources", out JsonElement imageSources))
+                if (ServerProcessedContent.TryGetProperty("imageSources", out JsonElement imageSources)
+                    && imageSources.ValueKind == JsonValueKind.Object)
                 {
                     foreach (var property in imageSources.EnumerateObject())
                     {
@@ -595,7 +596,8 @@ namespace PnP.Core.Model.SharePoint
         {
             if (!ServerProcessedContent.Equals(default))
             {
-                if (ServerProcessedContent.TryGetProperty("searchablePlainTexts", out JsonElement searchablePlainTexts))
+                if (ServerProcessedContent.TryGetProperty("searchablePlainTexts", out JsonElement searchablePlainTexts)
+                    && searchablePlainTexts.ValueKind == JsonValueKind.Object)
                 {
                     foreach (var property in searchablePlainTexts.EnumerateObject())
                     {
@@ -605,7 +607,8 @@ namespace PnP.Core.Model.SharePoint
                     }
                 }
 
-                if (ServerProcessedContent.TryGetProperty("imageSources", out JsonElement imageSources))
+                if (ServerProcessedContent.TryGetProperty("imageSources", out JsonElement imageSources)
+                    && imageSources.ValueKind == JsonValueKind.Object)
                 {
                     foreach (var property in imageSources.EnumerateObject())
                     {
@@ -630,7 +633,8 @@ namespace PnP.Core.Model.SharePoint
                     }
                 }
 
-                if (ServerProcessedContent.TryGetProperty("htmlStrings", out JsonElement htmlStrings))
+                if (ServerProcessedContent.TryGetProperty("htmlStrings", out JsonElement htmlStrings)
+                    && htmlStrings.ValueKind == JsonValueKind.Object)
                 {
                     foreach (var property in htmlStrings.EnumerateObject())
                     {
