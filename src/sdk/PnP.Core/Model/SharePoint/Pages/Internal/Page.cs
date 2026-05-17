@@ -2197,6 +2197,204 @@ namespace PnP.Core.Model.SharePoint
                 }
             }
         }
+
+        // HEU: written by LLM
+        // Read CanvasContent1 from the SitePages REST surface — the same endpoint family that hosts
+        // SavePage. SP normalises this surface to the JSON-array canvas form on read, regardless of
+        // how the field is stored on disk (legacy pages persist HTML-markup; the SitePages REST
+        // surface decodes that on the way out).
+        public async Task<string> GetNewPageContentAsync()
+        {
+            if (PageListItem == null)
+            {
+                throw new ClientException(ErrorType.Unsupported, $"Page {pageName} was not loaded/saved to SharePoint and therefore its content can't be read.");
+            }
+
+            var serverRel = $"{PageListItem[PageConstants.FileDirRef]}/{PageListItem[PageConstants.FileLeafRef]}";
+            var pageRel = serverRel.Substring(serverRel.IndexOf("/SitePages/", StringComparison.OrdinalIgnoreCase) + 1);
+
+            var apiCall = new ApiCall(
+                $"_api/sitepages/pages/GetByUrl('{pageRel}')",
+                ApiType.SPORest);
+
+            ApiCallResponse response;
+            try
+            {
+                response = await (PnPContext.Web as Web).RawRequestAsync(apiCall, HttpMethod.Get).ConfigureAwait(false);
+            }
+            catch (SharePointRestServiceException ex)
+            {
+                var sprError = ex.Error as SharePointRestError;
+                throw new SharePointRestServiceException(
+                    $"GET sitepages/pages/GetByUrl failed for '{pageRel}'. HTTP {sprError?.HttpResponseCode}. " +
+                    $"Server message: {sprError?.Message}. ClientRequestId: {sprError?.ClientRequestId}",
+                    ex);
+            }
+
+            if (string.IsNullOrEmpty(response.Json))
+            {
+                return string.Empty;
+            }
+            
+            JsonDocument doc;
+            try
+            {
+                doc = JsonDocument.Parse(response.Json);
+            }
+            catch (JsonException ex)
+            {
+                var bodyExcerpt = response.Json.Length > 200
+                    ? response.Json.Substring(0, 200) + "…"
+                    : response.Json;
+                throw new SharePointRestServiceException(
+                    $"GET sitepages/pages/GetByUrl returned non-JSON body for '{pageRel}': {ex.Message}. " +
+                    $"Body (truncated): {bodyExcerpt}",
+                    ex);
+            }
+            using (doc)
+            {
+                if (doc.RootElement.TryGetProperty("CanvasContent1", out var cc) && cc.ValueKind == JsonValueKind.String)
+                {
+                    return cc.GetString() ?? string.Empty;
+                }
+                return string.Empty;
+            }
+        }
+
+        // HEU: written by LLM
+        // Replace the page's CanvasContent1 by POSTing the raw string straight to the modern-page
+        // Save endpoint, instead of going through PageListItem.SystemUpdate / OverwriteVersion (what
+        // SaveAsync does).
+        public async Task SetNewPageContentAsync(string canvasContent1, bool forcePublish = false)
+        {
+            if (null == canvasContent1)
+            {
+                throw new ArgumentNullException(nameof(canvasContent1));
+            }
+            if (PageListItem == null)
+            {
+                throw new ClientException(ErrorType.Unsupported, string.Format(PnPCoreResources.Exception_Page_PageWasNotSaved, pageName));
+            }
+
+            var serverRel = $"{PageListItem[PageConstants.FileDirRef]}/{PageListItem[PageConstants.FileLeafRef]}";
+
+            // Snapshot pre-edit file state so we can restore it after SavePage. Level captures
+            // Published / Draft / Checkout; CheckOutType tells us if we already own the lock.
+            var pageFile = await PnPContext.Web.GetFileByServerRelativeUrlOrDefaultAsync(
+                serverRel,
+                f => f.Level,
+                f => f.CheckOutType,
+                f => f.ServerRelativeUrl).ConfigureAwait(false);
+            if (pageFile == null)
+            {
+                throw new ClientException(ErrorType.Unsupported, $"Page file '{serverRel}' not found.");
+            }
+            var initialLevel = pageFile.Level;
+            var initialCheckOutType = pageFile.CheckOutType;
+
+            // SavePage requires the file to be checked out. If it's already checked out (by us or
+            // by anyone else), CheckoutAsync would throw, so only check out when needed; if it's
+            // checked out by another user the SavePage POST below will surface the 409 itself.
+            // Track whether WE did the checkout so that any failure below can roll it back without
+            // ending an editing session we didn't start.
+            var weCheckedOut = false;
+            if (initialCheckOutType == CheckOutType.None)
+            {
+                await pageFile.CheckoutAsync().ConfigureAwait(false);
+                weCheckedOut = true;
+            }
+
+            // Surfaced in SharePoint version history / audit so we can recognise our own actions.
+            const string wikiTraccsActionComment = "Edit by WikiTraccs";
+
+            try
+            {
+                var jsonBody = JsonSerializer.Serialize(new { CanvasContent1 = canvasContent1 });
+                var pageRel = serverRel.Substring(serverRel.IndexOf("/SitePages/", StringComparison.OrdinalIgnoreCase) + 1);
+                var apiCall = new ApiCall(
+                    $"_api/sitepages/pages/GetByUrl('{pageRel}')/SavePage",
+                    ApiType.SPORest,
+                    jsonBody)
+                {
+                    // Override PnP's default Content-Type of "application/json;odata=verbose".
+                    // SavePage is undocumented but in practice rejects the verbose body shape (which
+                    // expects `__metadata` wrapping for typed entities) — the modern page editor in the
+                    // browser POSTs the flat `{ CanvasContent1: "..." }` body with `odata=nometadata`
+                    // and that's what works against this endpoint. The override mechanism in
+                    // BatchClient.ExecuteSharePointRestInteractiveAsync swaps the request's
+                    // Content-Type when ApiCall.Headers contains one.
+                    Headers = new System.Collections.Generic.Dictionary<string, string>
+                    {
+                        { "Content-Type", "application/json;odata=nometadata" }
+                    }
+                };
+                try
+                {
+                    await (PnPContext.Web as Web).RawRequestAsync(apiCall, HttpMethod.Post).ConfigureAwait(false);
+                }
+                catch (SharePointRestServiceException ex)
+                {
+                    // The bare exception message is just "SharePoint Rest service exception"; surface
+                    // the response body and status so callers can diagnose without re-running with a
+                    // debugger attached.
+                    var sprError = ex.Error as SharePointRestError;
+                    throw new SharePointRestServiceException(
+                        $"SavePage POST failed for '{pageRel}'. HTTP {sprError?.HttpResponseCode}. " +
+                        $"Server message: {sprError?.Message}. ClientRequestId: {sprError?.ClientRequestId}",
+                        ex);
+                }
+
+                // Restore the pre-save publish state, or force-publish if asked.
+                if (forcePublish || initialLevel == PublishedStatus.Published)
+                {
+                    // PublishAsync handles checkin (if needed) + file-publish + approve based on the
+                    // library's minor-versioning + moderation settings, so it's the right call for
+                    // both "force publish" and "page was published before". 3-arg overload chosen
+                    // explicitly to disambiguate from the legacy 1-arg signature.
+                    await PublishAsync(wikiTraccsActionComment, null, null).ConfigureAwait(false);
+                    return;
+                }
+                if (initialLevel == PublishedStatus.Draft)
+                {
+                    // Page was checked-in-as-minor (visible only to authors). Check our edit back in
+                    // the same way; do NOT publish.
+                    var freshFile = await PnPContext.Web.GetFileByServerRelativeUrlOrDefaultAsync(
+                        serverRel, f => f.CheckOutType).ConfigureAwait(false);
+                    if (freshFile != null && freshFile.CheckOutType != CheckOutType.None)
+                    {
+                        await freshFile.CheckinAsync(wikiTraccsActionComment, CheckinType.MinorCheckIn).ConfigureAwait(false);
+                    }
+                    return;
+                }
+                // initialLevel == Checkout: page was already checked out before we touched it; leave
+                // it checked out so we don't end someone's editing session implicitly.
+            }
+            catch
+            {
+                // Best-effort rollback: if WE created the checkout, undo it so a failed save doesn't
+                // leave the file locked for other editors. If the file was already checked out when
+                // we entered, we leave it alone — ending someone else's editing session would be
+                // worse than the half-touched state. Swallow rollback failures so the original
+                // exception (the real diagnostic) reaches the caller.
+                if (weCheckedOut)
+                {
+                    try
+                    {
+                        var rollbackFile = await PnPContext.Web.GetFileByServerRelativeUrlOrDefaultAsync(
+                            serverRel, f => f.CheckOutType).ConfigureAwait(false);
+                        if (rollbackFile != null && rollbackFile.CheckOutType != CheckOutType.None)
+                        {
+                            await rollbackFile.UndoCheckoutAsync().ConfigureAwait(false);
+                        }
+                    }
+                    catch
+                    {
+                        // ignore — propagating the original exception matters more
+                    }
+                }
+                throw;
+            }
+        }
         #endregion
 
         #region Page Translations

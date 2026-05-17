@@ -315,6 +315,21 @@ namespace PnP.Core.Model.SharePoint
         /// <returns>The name of the saved page</returns>
         public Task<string> SaveAsTemplateAsync(string pageName = null);
 
+        // HEU
+        /// <summary>
+        /// Reads the page's CanvasContent1 in the JSON-array form that SavePage accepts
+        /// </summary>
+        /// <returns>The page's CanvasContent1 in JSON-array form</returns>
+        Task<string> GetNewPageContentAsync();
+
+        // HEU
+        /// <summary>
+        /// Writes a raw CanvasContent1 string to the page via the SavePage endpoint
+        /// </summary>
+        /// <param name="canvasContent1">Canvas string to push to the page, in JSON-array form</param>
+        /// <param name="forcePublish">When true, always publishes after save; otherwise restores the pre-save publish state</param>
+        Task SetNewPageContentAsync(string canvasContent1, bool forcePublish = false);
+
         /// <summary>
         /// Deletes the created page
         /// </summary>
