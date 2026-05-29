@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -10,7 +11,7 @@ using System.Threading.Tasks;
 namespace WikiTraccs.Shared.Http
 {
 
-    public record RunningRequestInfo(string Uri, DateTime StartTimeUtc, TimeSpan? TimeoutForLogging);
+    public record RunningRequestInfo(string Uri, DateTime StartTimeUtc, TimeSpan? TimeoutForLogging, IReadOnlyList<string> Tags);
     public class AwaitableGate
     {
         // a static gate to apply throttling across all requests - in PnP.Core and PnP.Framework!
@@ -21,6 +22,8 @@ namespace WikiTraccs.Shared.Http
         private static Dictionary<long, RunningRequestInfo> RunningRequests = new();
         private static Timer? monitoringTimer;
         public static ILogger? Logger { get; set; }
+        // set from the app side; lets us read the caller's log tags
+        public static Func<IReadOnlyList<string>>? CurrentTagsProvider { get; set; }
         private static HashSet<long> warnedRequests = new();
         private static readonly object monitoringLock = new object();
 
@@ -68,7 +71,42 @@ namespace WikiTraccs.Shared.Http
             foreach (var (_, info) in requestsToWarn)
             {
                 var elapsed = currentTimeUtc - info.StartTimeUtc;
-                Logger?.LogInformation($"[SLOW REQUEST] Request to '{info.Uri}' has been running for {elapsed.TotalSeconds:F1} seconds{(info.TimeoutForLogging.HasValue ? $" (configured timeout is {info.TimeoutForLogging.Value.TotalSeconds:F0}s; but might be more if retrying request)" : "")}");
+                Logger?.LogInformation($"{FormatTagPrefix(info.Tags)}[SLOW REQUEST] Request to '{info.Uri}' has been running for {elapsed.TotalSeconds:F1} seconds{(info.TimeoutForLogging.HasValue ? $" (configured timeout is {info.TimeoutForLogging.Value.TotalSeconds:F0}s; but might be more if retrying request)" : "")}");
+            }
+        }
+
+        // written by LLM, 2026-05-30
+        // Reads the caller's current log tags on the caller's async flow. The slow-request
+        // log fires from a detached timer, so we snapshot the tags here to attribute it later.
+        // Wrapped so a missing provider or logging-context failure can never break request tracking.
+        private static IReadOnlyList<string> TryGetCurrentTags()
+        {
+            try
+            {
+                return CurrentTagsProvider?.Invoke() ?? Array.Empty<string>();
+            }
+            catch
+            {
+                return Array.Empty<string>();
+            }
+        }
+
+        // written by LLM, 2026-05-30
+        // Builds the "[tag] [tag] " prefix used to attribute a slow-request log to its caller.
+        // Returns an empty string on no tags or any failure, so it never disturbs the log call.
+        private static string FormatTagPrefix(IReadOnlyList<string>? tags)
+        {
+            try
+            {
+                if (null == tags || tags.Count == 0)
+                {
+                    return "";
+                }
+                return string.Concat(tags.Where(tag => !string.IsNullOrWhiteSpace(tag)).Select(tag => $"[{tag}] "));
+            }
+            catch
+            {
+                return "";
             }
         }
 
@@ -136,9 +174,10 @@ namespace WikiTraccs.Shared.Http
                 return 0;
             }
             var id = Random.Shared.NextInt64();
+            var tags = TryGetCurrentTags();
             lock (RunningRequests)
             {
-                RunningRequests[id] = new(uri, DateTime.UtcNow, timeoutForLogging);
+                RunningRequests[id] = new(uri, DateTime.UtcNow, timeoutForLogging, tags);
             }
             return id;
         }
