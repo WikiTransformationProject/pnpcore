@@ -110,7 +110,6 @@ namespace WikiTraccs.Shared.Http
             }
         }
 
-        private DateTime lastRequestTimeUtc = DateTime.UtcNow.AddMinutes(-60);
 #if DEBUG
         public int? MaxRequestsPerSecond { get; set; } = null;
 #else
@@ -121,6 +120,8 @@ namespace WikiTraccs.Shared.Http
         private TaskCompletionSource<bool>? tcs;
         private Timer? timer;
         private DateTime releaseTimeUtc= DateTime.UtcNow;
+        // next free client-side rate-limit slot; guarded by gateLock just like releaseTimeUtc
+        private DateTime nextRateLimitSlotUtc = DateTime.UtcNow;
         public bool IsWaiting => waitCounter > 0;
         public int WaitSecsLeft
         {
@@ -139,32 +140,45 @@ namespace WikiTraccs.Shared.Http
             }
         }
 
-        public int BumpWaitTimeToConfiguredRateLimit()
+        // written by LLM
+        // Proactive client-side rate limiting that holds under concurrency. Claims the next free
+        // send slot under gateLock and returns how many ms the caller must wait for it (0 if free).
+        // Each granted request pushes the slot forward by one interval, so parallel callers get
+        // spaced slots instead of all firing at once. The slot is floored to now (idle leaves no
+        // catch-up debt) and to releaseTimeUtc (a slot never undercuts a 429/503 throttle backoff).
+        public int ReserveRateLimitSlotMs()
         {
-            if (!MaxRequestsPerSecond.HasValue || MaxRequestsPerSecond.Value <= 0)
+            var maxRequestsPerSecond = MaxRequestsPerSecond;
+            if (null == maxRequestsPerSecond || maxRequestsPerSecond.Value <= 0)
             {
                 return 0;
             }
 
-            var waitTimeBetweenRequestsMs = 1000.0 / MaxRequestsPerSecond.Value;
-            var alreadyPassedWaitTimeSinceLastRequest = (DateTime.UtcNow - lastRequestTimeUtc).TotalMilliseconds;
-            var waitTimeLeftMs = (int)Math.Ceiling(waitTimeBetweenRequestsMs - alreadyPassedWaitTimeSinceLastRequest);
-            if (waitTimeLeftMs < 0 || DateTime.UtcNow + TimeSpan.FromMilliseconds(waitTimeLeftMs) <= releaseTimeUtc)
+            var slotIntervalMs = 1000.0 / maxRequestsPerSecond.Value;
+            lock (gateLock)
             {
-                // already waiting long enough? fine, nothing to do
-                return 0;
-            } 
-            // otherwise: wait
-            if (waitTimeLeftMs > 0)
-            {
-                if (waitTimeLeftMs > 1000)
+                var now = DateTime.UtcNow;
+                var earliestSlotUtc = now;
+                if (releaseTimeUtc > earliestSlotUtc)
                 {
-                    Debugger.Break();
+                    earliestSlotUtc = releaseTimeUtc;
                 }
-                SetWaitTime(waitTimeLeftMs);
-                return waitTimeLeftMs;
+
+                var slotUtc = earliestSlotUtc;
+                if (nextRateLimitSlotUtc > earliestSlotUtc)
+                {
+                    slotUtc = nextRateLimitSlotUtc;
+                }
+
+                nextRateLimitSlotUtc = slotUtc + TimeSpan.FromMilliseconds(slotIntervalMs);
+
+                var waitMs = (int)Math.Ceiling((slotUtc - now).TotalMilliseconds);
+                if (waitMs < 0)
+                {
+                    waitMs = 0;
+                }
+                return waitMs;
             }
-            return 0;
         }
 
         public static long StartRequest(string? uri, TimeSpan? timeoutForLogging)
@@ -289,11 +303,6 @@ namespace WikiTraccs.Shared.Http
                     tcs = null;
                 }
             }
-        }
-
-        public void RegisterNowAsLastRequestTime()
-        {
-            lastRequestTimeUtc = DateTime.UtcNow;
         }
 
         public bool IsMicrosoftEndpoint(HttpRequestMessage? request)
