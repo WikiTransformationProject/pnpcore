@@ -321,6 +321,16 @@ namespace WikiTraccs.Shared.Http
             {
                 return true;
             }
+            // Confluence REST shape: on-prem paths carry "rest/", cloud carries "api/v2/".
+            // Catches on-prem hosts that aren't *.atlassian. Over-matching a stray URL is fine;
+            // it just gets throttled, never broken.
+            var url = request?.RequestUri?.ToString();
+            var looksLikeOnPremRest = url?.Contains("rest/", StringComparison.InvariantCultureIgnoreCase) == true;
+            var looksLikeCloudRest = url?.Contains("api/v2/", StringComparison.InvariantCultureIgnoreCase) == true;
+            if (looksLikeOnPremRest || looksLikeCloudRest)
+            {
+                return true;
+            }
             return false;
         }
 
