@@ -457,7 +457,8 @@ namespace PnP.Core.Services
         /// Creates a new batch
         /// </summary>
         /// <returns></returns>
-        public Batch NewBatch()
+        // written by LLM, 2026-07-13: virtual so the offline FakePnPContext can intercept this (no HTTP in tests)
+        public virtual Batch NewBatch()
         {
             return BatchClient.EnsureBatch();
         }
@@ -477,7 +478,8 @@ namespace PnP.Core.Services
         /// </summary>
         /// <param name="throwOnError">Throw an exception on the first encountered error in the batch</param>
         /// <returns>The asynchronous task that will be executed</returns>
-        public async Task<List<BatchResult>> ExecuteAsync(bool throwOnError = true)
+        // written by LLM, 2026-07-13: virtual so the offline FakePnPContext can intercept this (no HTTP in tests)
+        public virtual async Task<List<BatchResult>> ExecuteAsync(bool throwOnError = true)
         {
             CurrentBatch.ThrowOnError = throwOnError;
             return await BatchClient.ExecuteBatch(CurrentBatch).ConfigureAwait(false);
@@ -489,7 +491,8 @@ namespace PnP.Core.Services
         /// <param name="batch">Batch to execute</param>
         /// <param name="throwOnError">Throw an exception on the first encountered error in the batch</param>
         /// <returns>The asynchronous task that will be executed</returns>
-        public async Task<List<BatchResult>> ExecuteAsync(Batch batch, bool throwOnError = true)
+        // written by LLM, 2026-07-13: virtual so the offline FakePnPContext can intercept this (no HTTP in tests)
+        public virtual async Task<List<BatchResult>> ExecuteAsync(Batch batch, bool throwOnError = true)
         {
             if (batch == null)
             {
@@ -534,7 +537,8 @@ namespace PnP.Core.Services
         /// Clones this context into a new context for the same SharePoint site
         /// </summary>
         /// <returns>New <see cref="PnPContext"/></returns>
-        public async Task<PnPContext> CloneAsync()
+        // written by LLM, 2026-07-13: virtual so the offline FakePnPContext can intercept this (no HTTP in tests)
+        public virtual async Task<PnPContext> CloneAsync()
         {
             return await CloneAsync(Uri).ConfigureAwait(false);
         }

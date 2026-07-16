@@ -40,6 +40,18 @@ namespace PnP.Core.Services
             CopyRequestModules(modelInstance);
         }
 
+        // written by LLM, 2026-07-13
+        // Test seam: minimal request used by the offline in-memory fake backend to correlate batch
+        // results by id. A real request needs a model/entityInfo/apiCall; the fake never sends HTTP,
+        // so those stay null and the request only carries an id, an operation name and an order.
+        internal BatchRequest(string operationName, int order)
+        {
+            Id = Guid.NewGuid();
+            OperationName = operationName;
+            Order = order;
+            ExecutionNeeded = true;
+        }
+
         /// <summary>
         /// Id of the <see cref="BatchRequest"/>
         /// </summary>

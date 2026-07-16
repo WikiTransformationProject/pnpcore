@@ -52,6 +52,31 @@ namespace PnP.Core.Services
         /// </summary>
         public bool Executed { get; internal set; }
 
+        // HEU: written by LLM, 2026-07-13
+        // Test seam: register a placeholder request so an offline in-memory fake backend can hand
+        // batch results back by id (prod reads batch.Requests.Values.Last().Id to correlate). Returns
+        // the new request's id. Construction stays in-assembly because BatchRequest's ctor is internal.
+        public Guid AddFakeRequest(string operationName)
+        {
+            var order = Requests.Count == 0 ? 0 : Requests.Keys[Requests.Count - 1] + 1;
+            var request = new BatchRequest(operationName, order);
+            Requests.Add(order, request);
+            return request.Id;
+        }
+
+        // HEU: written by LLM, 2026-07-13
+        // Test seam: build a failed-request result the offline fake backend returns from a faked
+        // ExecuteAsync (prod reads .BatchRequestId, .Error?.Message and .StatusCode off it). Stays
+        // in-assembly because BatchResult's and ServiceError's ctors are internal.
+        public BatchResult CreateFakeFailedResult(Guid requestId, System.Net.HttpStatusCode statusCode, string errorMessage)
+        {
+            var error = new ServiceError(ErrorType.SharePointRestServiceError, (int)statusCode)
+            {
+                Message = errorMessage
+            };
+            return new BatchResult(statusCode, error, "", "SPORest", "", System.Net.Http.HttpMethod.Post, "", requestId);
+        }
+
         /// <summary>
         /// Event handler triggered when batch execution is done
         /// </summary>
