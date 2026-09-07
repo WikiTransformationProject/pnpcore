@@ -186,7 +186,15 @@ namespace PnP.Core.Services
                         GlobalSettings.Logger.LogInformation($"[THROTTLED] Waiting {delayTimeSpan.TotalSeconds} seconds before retrying");
                     }
                     // Delay time
-                    AwaitableGate.MicrosoftInstance.SetWaitTime((int)delayTimeSpan.TotalMilliseconds);
+                    // v============= HEU/LLM: Record structured PnP Core pushback facts. ==========
+                    // written by LLM, 2026-09-04
+                    AwaitableGate.MicrosoftInstance.SetWaitTime(
+                        (int)delayTimeSpan.TotalMilliseconds,
+                        nameof(RetryHandlerBase),
+                        request.RequestUri?.ToString(),
+                        response?.StatusCode.ToString() ?? innermostEx?.GetType().Name ?? "ConnectionError",
+                        retryCount);
+                    // ^=============================================================================
                     await AwaitableGate.MicrosoftInstance.WaitAsync(cancellationToken).ConfigureAwait(false);
     //                await delay.ConfigureAwait(false);
                 }

@@ -11,21 +11,93 @@ using System.Threading.Tasks;
 namespace WikiTraccs.Shared.Http
 {
 
-    public record RunningRequestInfo(string Uri, DateTime StartTimeUtc, TimeSpan? TimeoutForLogging, IReadOnlyList<string> Tags);
+    public record RunningRequestInfo(string Uri, DateTime StartTimeUtc, TimeSpan? TimeoutForLogging, IReadOnlyList<string> Tags, Func<IDisposable>? RestoreLogScope = null);
+
+    // written by LLM, 2026-09-04
+    // One request backoff at the point where the shared gate accepts it.
+    public sealed record PushbackEventInfo(
+        long EventId,
+        string Service,
+        string Source,
+        string Target,
+        string Status,
+        DateTime OccurredUtc,
+        int RetryNumber,
+        int WaitMilliseconds);
+
     public class AwaitableGate
     {
+        // v============= HEU/LLM: Count requests in one upload flow. ==========
+        // written by LLM, 2026-09-04
+        // Counts logical request starts and retry events in one async flow. Parallel child tasks
+        // share the counters. A nested scope also adds its values to each parent scope.
+        public sealed class LogicalRequestCountScope : IDisposable
+        {
+            private readonly LogicalRequestCountScope? parent;
+            private long logicalRequestStartCount;
+            private long retryEventCount;
+            private int isDisposed;
+
+            internal LogicalRequestCountScope(LogicalRequestCountScope? parent)
+            {
+                this.parent = parent;
+            }
+
+            public long LogicalRequestStartCount => Interlocked.Read(ref logicalRequestStartCount);
+            public long RetryEventCount => Interlocked.Read(ref retryEventCount);
+            internal LogicalRequestCountScope? Parent => parent;
+
+            internal void AddLogicalRequestStart()
+            {
+                Interlocked.Increment(ref logicalRequestStartCount);
+            }
+
+            internal void AddRetryEvent()
+            {
+                Interlocked.Increment(ref retryEventCount);
+            }
+
+            public void Dispose()
+            {
+                if (Interlocked.Exchange(ref isDisposed, 1) != 0)
+                {
+                    return;
+                }
+
+                if (ReferenceEquals(currentLogicalRequestCountScope.Value, this))
+                {
+                    currentLogicalRequestCountScope.Value = parent;
+                }
+            }
+        }
+        // ^===================================================================
+
         // a static gate to apply throttling across all requests - in PnP.Core and PnP.Framework!
         // no pretty solution; should merge with rate limiter to coordinate backing off across all workloads
-        public static AwaitableGate MicrosoftInstance { get; private set; } = new();
+        public static AwaitableGate MicrosoftInstance { get; private set; } = new() { ServiceName = "Microsoft" };
         // same thing as for Microsoft, but for Atlassian
-        public static AwaitableGate AtlassianInstance { get; private set; } = new();
+        public static AwaitableGate AtlassianInstance { get; private set; } = new() { ServiceName = "Atlassian" };
+        public const string PushbackLogMarker = "[WTM:SPOPUSHBACK]";
+        public string ServiceName { get; init; } = "Unspecified";
         private static Dictionary<long, RunningRequestInfo> RunningRequests = new();
         private static Timer? monitoringTimer;
         public static ILogger? Logger { get; set; }
         // set from the app side; lets us read the caller's log tags
         public static Func<IReadOnlyList<string>>? CurrentTagsProvider { get; set; }
+        // v============= HEU/LLM: Capture the caller's log scope for the slow-request log. ==========
+        // written by LLM, 2026-09-06
+        // Set from the app side. Called in the caller's async flow at request start; the returned
+        // function restores that log scope (page id, site, tenant, tags) on any thread later.
+        public static Func<Func<IDisposable>?>? LogScopeCaptureProvider { get; set; }
+        // A request that runs at least this long is written to the log: while it runs, from the
+        // monitoring timer, and when it ends, from the request's own flow.
+        public const double SlowRequestSeconds = 10.0;
+        // ^===================================================================
         private static HashSet<long> warnedRequests = new();
         private static readonly object monitoringLock = new object();
+        // v============= HEU/LLM: Keep the current request-count scope. ==========
+        private static readonly AsyncLocal<LogicalRequestCountScope?> currentLogicalRequestCountScope = new();
+        // ^===================================================================
 
         static AwaitableGate()
         {
@@ -57,7 +129,7 @@ namespace WikiTraccs.Shared.Http
                 foreach (var kvp in RunningRequests)
                 {
                     var elapsed = currentTimeUtc - kvp.Value.StartTimeUtc;
-                    if (elapsed.TotalSeconds >= 10.0)
+                    if (elapsed.TotalSeconds >= SlowRequestSeconds)
                     {
                         lock (monitoringLock)
                         {
@@ -71,7 +143,11 @@ namespace WikiTraccs.Shared.Http
             foreach (var (_, info) in requestsToWarn)
             {
                 var elapsed = currentTimeUtc - info.StartTimeUtc;
-                Logger?.LogInformation($"{FormatTagPrefix(info.Tags)}[SLOW REQUEST] Request to '{info.Uri}' has been running for {elapsed.TotalSeconds:F1} seconds{(info.TimeoutForLogging.HasValue ? $" (configured timeout is {info.TimeoutForLogging.Value.TotalSeconds:F0}s; but might be more if retrying request)" : "")}");
+                // written by LLM, 2026-09-06
+                // The timer thread has no page id, site, or tenant of its own. The restorer puts the
+                // scope of the request start back, so the enrichers add them like for any other line.
+                var message = $"[SLOW REQUEST] Request to '{info.Uri}' has been running for {elapsed.TotalSeconds:F1} seconds{(info.TimeoutForLogging.HasValue ? $" (configured timeout is {info.TimeoutForLogging.Value.TotalSeconds:F0}s; but might be more if retrying request)" : "")}";
+                WriteInRestoredLogScope(info, message);
             }
         }
 
@@ -131,6 +207,16 @@ namespace WikiTraccs.Shared.Http
             }
         }
         int waitCounter;
+        // v============= HEU/LLM: Expose SharePoint pushback state. ==========
+        private long pushbackCount;
+        // written by LLM, 2026-09-03, 2026-09-04
+        // How often a client of this gate had to retry: an HTTP 429, 503, or 504, a timeout,
+        // or a dropped connection. A retry with zero wait also counts. Every SharePoint retry path
+        // calls SetWaitTime, so this one counter sees all of them. The upload controller reads it.
+        public long PushbackCount => Interlocked.Read(ref pushbackCount);
+        public DateTime? LastPushbackUtc { get; private set; }
+        public PushbackEventInfo? LastPushbackEvent { get; private set; }
+        // ^===================================================================
 
         public AwaitableGate(int initialWaitTimeMilliseconds = Timeout.Infinite)
         {
@@ -187,20 +273,106 @@ namespace WikiTraccs.Shared.Http
             {
                 return 0;
             }
+            // written by LLM, 2026-09-04
+            AddLogicalRequestStartToActiveScopes();
             var id = Random.Shared.NextInt64();
             var tags = TryGetCurrentTags();
+            // v============= HEU/LLM: Capture the log scope in the caller's flow. ==========
+            // written by LLM, 2026-09-06
+            var restoreLogScope = TryCaptureLogScope();
             lock (RunningRequests)
             {
-                RunningRequests[id] = new(uri, DateTime.UtcNow, timeoutForLogging, tags);
+                RunningRequests[id] = new(uri, DateTime.UtcNow, timeoutForLogging, tags, restoreLogScope);
             }
+            // ^===================================================================
             return id;
         }
 
+        // v============= HEU/LLM: Restore the caller's log scope for a log line from another thread. ==========
+        // written by LLM, 2026-09-06
+        private static Func<IDisposable>? TryCaptureLogScope()
+        {
+            try
+            {
+                return LogScopeCaptureProvider?.Invoke();
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        // written by LLM, 2026-09-06
+        // Without a restorer the tags go into the message text, like before.
+        private static void WriteInRestoredLogScope(RunningRequestInfo info, string message)
+        {
+            if (null == info.RestoreLogScope)
+            {
+                Logger?.LogInformation($"{FormatTagPrefix(info.Tags)}{message}");
+                return;
+            }
+
+            try
+            {
+                using (info.RestoreLogScope())
+                {
+                    Logger?.LogInformation(message);
+                }
+            }
+            catch
+            {
+                Logger?.LogInformation($"{FormatTagPrefix(info.Tags)}{message}");
+            }
+        }
+        // ^===================================================================
+
+        // v============= HEU/LLM: Manage request-count scopes. ==========
+        // written by LLM, 2026-09-04
+        // Starts a local diagnostic count. It observes existing request boundaries and does not
+        // send a request or change retry behavior.
+        public static LogicalRequestCountScope StartLogicalRequestCount()
+        {
+            var scope = new LogicalRequestCountScope(currentLogicalRequestCountScope.Value);
+            currentLogicalRequestCountScope.Value = scope;
+            return scope;
+        }
+
+        // written by LLM, 2026-09-04
+        private static void AddLogicalRequestStartToActiveScopes()
+        {
+            var scope = currentLogicalRequestCountScope.Value;
+            while (null != scope)
+            {
+                scope.AddLogicalRequestStart();
+                scope = scope.Parent;
+            }
+        }
+
+        // written by LLM, 2026-09-04
+        private static void AddRetryEventToActiveScopes()
+        {
+            var scope = currentLogicalRequestCountScope.Value;
+            while (null != scope)
+            {
+                scope.AddRetryEvent();
+                scope = scope.Parent;
+            }
+        }
+        // ^===================================================================
+
         public static bool EndRequest(long id)
         {
+            // v============= HEU/LLM: Log a slow request at its end, from the request's own flow. ==========
+            // written by LLM, 2026-09-06
+            // The end runs in the flow of the request, so this line gets the page id and the site
+            // from the enrichers without a restorer. It names the total time, which the timer
+            // line cannot.
+            RunningRequestInfo? endedInfo;
+            bool removed;
             lock (RunningRequests)
             {
-                var removed = RunningRequests.Remove(id);
+                RunningRequests.TryGetValue(id, out endedInfo);
+                removed = RunningRequests.Remove(id);
                 if (removed)
                 {
                     lock (monitoringLock)
@@ -208,14 +380,74 @@ namespace WikiTraccs.Shared.Http
                         warnedRequests.Remove(id);
                     }
                 }
-                return removed;
             }
+
+            if (removed && null != endedInfo)
+            {
+                var elapsed = DateTime.UtcNow - endedInfo.StartTimeUtc;
+                if (elapsed.TotalSeconds >= SlowRequestSeconds)
+                {
+                    Logger?.LogInformation($"[SLOW REQUEST] Request to '{endedInfo.Uri}' ended after {elapsed.TotalSeconds:F1} seconds");
+                }
+            }
+            return removed;
+            // ^===================================================================
         }
 
-        public void SetWaitTime(int waitTimeMilliseconds)
+        // v============= HEU/LLM: Accept pushback diagnostic details. ==========
+        // written by LLM, 2026-09-04
+        // Records one event before the wait is combined with an existing longer wait. Thus one
+        // source retry produces one event, also when it does not extend the shared gate wait.
+        public void SetWaitTime(
+            int waitTimeMilliseconds,
+            string source = "Unspecified",
+            string? target = null,
+            string? status = null,
+            int retryNumber = 0)
+        // ^===================================================================
         {
             lock (gateLock)
             {
+                // v============= HEU/LLM: Record and log this pushback event. ==========
+                // written by LLM, 2026-09-03, 2026-09-04
+                // Count before the shorter-wait check, so each pushback counts once. The retry
+                // number distinguishes a zero-wait retry from an ordinary gate reset.
+                var hasRetryMetadata = retryNumber > 0;
+                if (waitTimeMilliseconds > 0 || hasRetryMetadata)
+                {
+                    // written by LLM, 2026-09-04
+                    if (hasRetryMetadata)
+                    {
+                        AddRetryEventToActiveScopes();
+                    }
+                    var eventId = Interlocked.Increment(ref pushbackCount);
+                    var occurredUtc = DateTime.UtcNow;
+                    LastPushbackUtc = occurredUtc;
+                    LastPushbackEvent = new PushbackEventInfo(
+                        eventId,
+                        ServiceName,
+                        source,
+                        target ?? "Unknown",
+                        status ?? "Unknown",
+                        occurredUtc,
+                        retryNumber,
+                        waitTimeMilliseconds);
+                    if (ServiceName.Equals("Microsoft", StringComparison.Ordinal))
+                    {
+                        Logger?.LogInformation(
+                            "SharePoint pushback event {EventId}: service {Service}; source {Source}; target {Target}; status {Status}; time {OccurredUtc:O}; retry {RetryNumber}; wait {WaitMilliseconds} ms " + PushbackLogMarker,
+                            eventId,
+                            ServiceName,
+                            source,
+                            target ?? "Unknown",
+                            status ?? "Unknown",
+                            occurredUtc,
+                            retryNumber,
+                            waitTimeMilliseconds);
+                    }
+                }
+                // ^===================================================================
+
                 if (DateTime.UtcNow + TimeSpan.FromMilliseconds(waitTimeMilliseconds) < releaseTimeUtc)
                 {
                     // less wait time? don't accept, wait the maximum

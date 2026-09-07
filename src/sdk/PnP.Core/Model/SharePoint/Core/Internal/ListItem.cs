@@ -39,6 +39,16 @@ namespace PnP.Core.Model.SharePoint
         {
             MappingHandler = (FromJson input) =>
             {
+                // v============= HEU/LLM: Read a folder ID number or null ==========
+                // written by LLM, 2026-09-07
+                // covered by TestPnPPageFolderIdReadsStoredValueInOneRequestAsync
+                if (input.FieldName == nameof(SpAssetFolderId))
+                {
+                    return input.JsonElement.ValueKind == JsonValueKind.Null
+                        ? null
+                        : input.JsonElement.GetDouble();
+                }
+                // ^===================================================================
                 // The AddValidateUpdateItemUsingPath call returns the id of the added list item
                 if (input.FieldName == "value")
                 {
@@ -256,6 +266,27 @@ namespace PnP.Core.Model.SharePoint
 
         #region Properties
         public int Id { get => GetValue<int>(); set => SetValue(value); }
+
+        // v============= HEU/LLM: Keep the folder ID in the list item values ==========
+        // written by LLM, 2026-09-07
+        // covered by TestPnPPageFolderIdKeepsDictionaryWritesAsync
+        [SharePointProperty("OData__SPAssetFolderId", UseCustomMapping = true)]
+        public double? SpAssetFolderId
+        {
+            get
+            {
+                var value = Values["_SPAssetFolderId"];
+                return null == value ? null : Convert.ToDouble(value, CultureInfo.InvariantCulture);
+            }
+            set
+            {
+                Values["_SPAssetFolderId"] = value;
+                // written by LLM, 2026-09-07
+                // covered by TestPnPPageFolderIdReloadKeepsItemUnchangedAsync
+                SetSystemValue(value);
+            }
+        }
+        // ^===================================================================
 
         public string Title { get => (string)Values["Title"]; set => Values["Title"] = value; }
 

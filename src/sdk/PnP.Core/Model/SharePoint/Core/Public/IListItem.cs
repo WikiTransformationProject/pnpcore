@@ -18,6 +18,14 @@ namespace PnP.Core.Model.SharePoint
         /// </summary>
         public int Id { get; }
 
+        // v============= HEU/LLM: Read the page attachment folder ID ==========
+        // written by LLM, 2026-09-07
+        /// <summary>
+        /// The page attachment folder ID, or null when the field has no value.
+        /// </summary>
+        public double? SpAssetFolderId { get; }
+        // ^===================================================================
+
         /// <summary>
         /// Title value of the list item
         /// </summary>
