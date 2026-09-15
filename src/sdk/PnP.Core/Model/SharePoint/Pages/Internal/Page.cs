@@ -1797,7 +1797,17 @@ namespace PnP.Core.Model.SharePoint
 
                 // Get the list item data for the added page
                 await EnsurePageListItemAsync(pageName).ConfigureAwait(false);
-                PageListItem[PageConstants.Title] = string.IsNullOrWhiteSpace(pageTitle) ? Path.GetFileNameWithoutExtension(pageName) : pageTitle;
+                // v============= HEU/LLM: Keep a title from the file name within the Text field limit. ==========
+                // written by LLM, 2026-09-14
+                // covered by SharePointPageWithLongFileNameKeepsTitleAsync
+                var titleForItem = pageTitle;
+                if (string.IsNullOrWhiteSpace(titleForItem))
+                {
+                    var fileTitle = Path.GetFileNameWithoutExtension(pageName);
+                    titleForItem = fileTitle.Length > 255 ? fileTitle.Substring(0, 255) : fileTitle;
+                }
+                PageListItem[PageConstants.Title] = titleForItem;
+                // ^===================================================================
             }
             else
             {
