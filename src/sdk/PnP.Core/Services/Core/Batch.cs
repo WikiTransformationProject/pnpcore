@@ -64,13 +64,16 @@ namespace PnP.Core.Services
             return request.Id;
         }
 
-        // HEU: written by LLM, 2026-07-13
+        // HEU: written by LLM, 2026-07-13, 2026-09-18
         // Test seam: build a failed-request result the offline fake backend returns from a faked
         // ExecuteAsync (prod reads .BatchRequestId, .Error?.Message and .StatusCode off it). Stays
-        // in-assembly because BatchResult's and ServiceError's ctors are internal.
+        // in-assembly because BatchResult's and SharePointRestError's ctors are internal.
+        // A live probe showed that a failed SharePoint list write in a batch carries
+        // a SharePointRestError, thus the fake result carries that type too. The message is set
+        // after construction, because the constructor reads a message that starts with { as JSON.
         public BatchResult CreateFakeFailedResult(Guid requestId, System.Net.HttpStatusCode statusCode, string errorMessage)
         {
-            var error = new ServiceError(ErrorType.SharePointRestServiceError, (int)statusCode)
+            var error = new SharePointRestError(ErrorType.SharePointRestServiceError, (int)statusCode, null)
             {
                 Message = errorMessage
             };

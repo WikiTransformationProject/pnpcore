@@ -56,6 +56,9 @@ namespace PnP.Core.Services
                 {
                     HttpResponseMessage response = null;
                     Exception innermostEx = null;
+                    // v============= HEU/LLM: Mark the phase of the request. ==========
+                    AwaitableGate.MarkPhase(id, RequestPhase.WaitingAtGate);
+                    // ^================================================================
 
                     // Throw an exception if we've requested to cancel the operation
                     cancellationToken.ThrowIfCancellationRequested();
@@ -84,6 +87,9 @@ namespace PnP.Core.Services
                         }
                         await AwaitableGate.MicrosoftInstance.WaitAsync(cancellationToken).ConfigureAwait(false);
 
+                        // v============= HEU/LLM: Mark the phase of the request. ==========
+                        AwaitableGate.MarkPhase(id, RequestPhase.OnTheWire);
+                        // ^================================================================
                         response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
                         // If we received request rate limit headers then store them
@@ -99,6 +105,9 @@ namespace PnP.Core.Services
                         
                         if (!ShouldRetry(response.StatusCode))
                         {
+                            // v============= HEU/LLM: Name the end of the request. ==========
+                            AwaitableGate.MarkOutcome(id, ((int)response.StatusCode).ToString());
+                            // ^==============================================================
                             return response;
                         }
 
@@ -187,7 +196,8 @@ namespace PnP.Core.Services
                     }
                     // Delay time
                     // v============= HEU/LLM: Record structured PnP Core pushback facts. ==========
-                    // written by LLM, 2026-09-04
+                    AwaitableGate.MarkPhase(id, RequestPhase.WaitingForRetry,
+                        response?.StatusCode.ToString() ?? innermostEx?.GetType().Name ?? "ConnectionError");
                     AwaitableGate.MicrosoftInstance.SetWaitTime(
                         (int)delayTimeSpan.TotalMilliseconds,
                         nameof(RetryHandlerBase),

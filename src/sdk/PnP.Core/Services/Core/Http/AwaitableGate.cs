@@ -11,7 +11,164 @@ using System.Threading.Tasks;
 namespace WikiTraccs.Shared.Http
 {
 
-    public record RunningRequestInfo(string Uri, DateTime StartTimeUtc, TimeSpan? TimeoutForLogging, IReadOnlyList<string> Tags, Func<IDisposable>? RestoreLogScope = null);
+    public record RunningRequestInfo(string Uri, DateTime StartTimeUtc, TimeSpan? TimeoutForLogging, IReadOnlyList<string> Tags, Func<IDisposable>? RestoreLogScope = null)
+    {
+        // v============= HEU/LLM: The phases of the request. ==========
+        public RequestPhases Phases { get; } = new();
+        // ^=============================================================
+    }
+
+    // v============= HEU/LLM: Say where the time of a slow request goes. ==========
+    // written by LLM, 2026-09-18
+    // A request waits at the shared gate, is on the wire, or waits for a retry after a
+    // pushback. The handlers mark each change; the slow-request log then says where the time
+    // went, and a reader sees that "slow" is a closed gate and not a slow server.
+    public enum RequestPhase
+    {
+        WaitingAtGate,
+        OnTheWire,
+        WaitingForRetry
+    }
+
+    // written by LLM, 2026-09-18
+    // The time of one request in each phase. The marks come from the flow of the request; the
+    // reads come from the monitor timer, thus the lock.
+    public sealed class RequestPhases
+    {
+        private readonly object phaseLock = new();
+        private RequestPhase phase = RequestPhase.WaitingAtGate;
+        private DateTime phaseStartUtc = DateTime.UtcNow;
+        private double gateWaitSeconds;
+        private double onTheWireSeconds;
+        private double retryWaitSeconds;
+        private int retryCount;
+        private string? lastStatus;
+        private string? outcome;
+
+        public RequestPhase Phase
+        {
+            get
+            {
+                lock (phaseLock)
+                {
+                    return phase;
+                }
+            }
+        }
+
+        // The end of the request, as the handler saw it: a status, or a word for a result
+        // without a status. A request that ends without a mark ended with an error or a cancel.
+        public void SetOutcome(string? outcomeForLogging)
+        {
+            lock (phaseLock)
+            {
+                outcome = outcomeForLogging;
+            }
+        }
+
+        // Closes the current phase and opens the next one. A retry counts, and its status
+        // (an HTTP status or an exception name) stays as the last known reason.
+        public void Enter(RequestPhase next, string? status, DateTime nowUtc)
+        {
+            lock (phaseLock)
+            {
+                AddCurrentPhase(nowUtc);
+                if (next == RequestPhase.WaitingForRetry)
+                {
+                    retryCount++;
+                    lastStatus = status;
+                }
+                phase = next;
+                phaseStartUtc = nowUtc;
+            }
+        }
+
+        private void AddCurrentPhase(DateTime nowUtc)
+        {
+            var seconds = Math.Max(0, (nowUtc - phaseStartUtc).TotalSeconds);
+            switch (phase)
+            {
+                case RequestPhase.OnTheWire:
+                    onTheWireSeconds += seconds;
+                    break;
+                case RequestPhase.WaitingForRetry:
+                    retryWaitSeconds += seconds;
+                    break;
+                default:
+                    gateWaitSeconds += seconds;
+                    break;
+            }
+        }
+
+        // One readable text for the log: the phase of this moment, the seconds of each phase,
+        // and the retries with their last status.
+        public string Describe(DateTime nowUtc, bool withCurrentPhase)
+        {
+            lock (phaseLock)
+            {
+                var gate = gateWaitSeconds;
+                var wire = onTheWireSeconds;
+                var retry = retryWaitSeconds;
+                var current = Math.Max(0, (nowUtc - phaseStartUtc).TotalSeconds);
+                switch (phase)
+                {
+                    case RequestPhase.OnTheWire:
+                        wire += current;
+                        break;
+                    case RequestPhase.WaitingForRetry:
+                        retry += current;
+                        break;
+                    default:
+                        gate += current;
+                        break;
+                }
+
+                var text = $"gate wait {gate:F1} s, on the wire {wire:F1} s, retry wait {retry:F1} s";
+                if (withCurrentPhase)
+                {
+                    text = $"now {DescribePhase(phase)}; {text}";
+                }
+                else
+                {
+                    // written by LLM, 2026-09-18
+                    // At the end of the request the reader wants to know how it ended. No mark
+                    // means that the request threw or was cancelled.
+                    text = $"result {outcome ?? "error or cancel"}; {text}";
+                }
+                if (retryCount > 0)
+                {
+                    text += $", {retryCount} retries, last status {lastStatus ?? "unknown"}";
+                }
+                return text;
+            }
+        }
+
+        public static string DescribePhase(RequestPhase phase)
+        {
+            switch (phase)
+            {
+                case RequestPhase.OnTheWire:
+                    return "on the wire";
+                case RequestPhase.WaitingForRetry:
+                    return "waiting for the retry";
+                default:
+                    return "waiting at the gate";
+            }
+        }
+    }
+
+    // written by LLM, 2026-09-18
+    // The facts of the slow requests at one tick of the monitor, for a receiver that decides
+    // what it shows. The gate values are those of the SharePoint gate.
+    public sealed record SlowRequestSnapshot(
+        int SlowRequestCount,
+        double LongestSeconds,
+        string? LongestUri,
+        RequestPhase? LongestPhase,
+        int WaitingAtGateCount,
+        int SharePointGateSecondsLeft,
+        string? LastPushbackStatus);
+    // ^===================================================================================
 
     // written by LLM, 2026-09-04
     // One request backoff at the point where the shared gate accepts it.
@@ -89,9 +246,19 @@ namespace WikiTraccs.Shared.Http
         // Set from the app side. Called in the caller's async flow at request start; the returned
         // function restores that log scope (page id, site, tenant, tags) on any thread later.
         public static Func<Func<IDisposable>?>? LogScopeCaptureProvider { get; set; }
-        // A request that runs at least this long is written to the log: while it runs, from the
-        // monitoring timer, and when it ends, from the request's own flow.
+        // A request that runs at least this long is written to the log: one time when the monitor
+        // sees it, and when it ends, from the request's own flow. While slow requests run, a
+        // summary line comes every third tick, thus the log shows movement without one line for
+        // each request and tick.
         public const double SlowRequestSeconds = 10.0;
+        public const int MonitorTickMs = 5000;
+        public const int SummaryEveryTicks = 3;
+        // written by LLM, 2026-09-18
+        // Set from the app side. Gets the slow-request facts at each tick while a slow request
+        // runs, and one more time when none is slow any more.
+        public static Action<SlowRequestSnapshot>? SlowRequestObserver { get; set; }
+        private static int monitorTickCount;
+        private static bool hadSlowRequestsAtLastTick;
         // ^===================================================================
         private static HashSet<long> warnedRequests = new();
         private static readonly object monitoringLock = new object();
@@ -116,40 +283,129 @@ namespace WikiTraccs.Shared.Http
                 {
                     Logger?.LogWarning($"Request monitoring error: {ex.Message}");
                 }
-            }, null, 3000, 3000);
+            }, null, MonitorTickMs, MonitorTickMs);
         }
 
+        // v============= HEU/LLM: One line for each slow request, a summary while they run. ==========
         private static void CheckForLongRunningRequests()
         {
             var currentTimeUtc = DateTime.UtcNow;
-            var requestsToWarn = new List<(long Id, RunningRequestInfo Info)>();
+            var slowRequests = new List<(long Id, RunningRequestInfo Info)>();
+            var waitingAtGateCount = 0;
 
             lock (RunningRequests)
             {
                 foreach (var kvp in RunningRequests)
                 {
+                    if (kvp.Value.Phases.Phase != RequestPhase.OnTheWire)
+                    {
+                        waitingAtGateCount++;
+                    }
                     var elapsed = currentTimeUtc - kvp.Value.StartTimeUtc;
                     if (elapsed.TotalSeconds >= SlowRequestSeconds)
                     {
-                        lock (monitoringLock)
-                        {
-                            warnedRequests.Add(kvp.Key);
-                            requestsToWarn.Add((kvp.Key, kvp.Value));
-                        }
+                        slowRequests.Add((kvp.Key, kvp.Value));
                     }
                 }
             }
 
-            foreach (var (_, info) in requestsToWarn)
+            foreach (var (id, info) in slowRequests)
             {
+                bool isFirstLineOfThisRequest;
+                lock (monitoringLock)
+                {
+                    isFirstLineOfThisRequest = warnedRequests.Add(id);
+                }
+                if (!isFirstLineOfThisRequest)
+                {
+                    continue;
+                }
+
                 var elapsed = currentTimeUtc - info.StartTimeUtc;
                 // written by LLM, 2026-09-06
                 // The timer thread has no page id, site, or tenant of its own. The restorer puts the
                 // scope of the request start back, so the enrichers add them like for any other line.
-                var message = $"[SLOW REQUEST] Request to '{info.Uri}' has been running for {elapsed.TotalSeconds:F1} seconds{(info.TimeoutForLogging.HasValue ? $" (configured timeout is {info.TimeoutForLogging.Value.TotalSeconds:F0}s; but might be more if retrying request)" : "")}";
+                var message = $"[SLOW REQUEST] Request to '{info.Uri}' has been running for {elapsed.TotalSeconds:F1} seconds: {info.Phases.Describe(currentTimeUtc, withCurrentPhase: true)}{(info.TimeoutForLogging.HasValue ? $" (configured timeout is {info.TimeoutForLogging.Value.TotalSeconds:F0}s; but might be more if retrying request)" : "")}";
                 WriteInRestoredLogScope(info, message);
             }
+
+            var snapshot = MakeSlowRequestSnapshot(slowRequests, waitingAtGateCount, currentTimeUtc);
+            monitorTickCount++;
+            var hasSlowRequests = slowRequests.Count > 0;
+            if (hasSlowRequests && monitorTickCount % SummaryEveryTicks == 0)
+            {
+                var longestPhase = snapshot.LongestPhase.HasValue ? RequestPhases.DescribePhase(snapshot.LongestPhase.Value) : "unknown phase";
+                Logger?.LogInformation($"[SLOW REQUEST] {snapshot.SlowRequestCount} slow requests; the longest runs {snapshot.LongestSeconds:F0} s to '{snapshot.LongestUri}' ({longestPhase}); {snapshot.WaitingAtGateCount} requests wait at the gate, {snapshot.SharePointGateSecondsLeft} s left; last pushback {snapshot.LastPushbackStatus ?? "none"}");
+            }
+
+            if (hasSlowRequests || hadSlowRequestsAtLastTick)
+            {
+                try
+                {
+                    SlowRequestObserver?.Invoke(snapshot);
+                }
+                catch (Exception ex)
+                {
+                    Logger?.LogWarning($"Slow request observer error: {ex.Message}");
+                }
+            }
+            hadSlowRequestsAtLastTick = hasSlowRequests;
         }
+
+        // written by LLM, 2026-09-18
+        private static SlowRequestSnapshot MakeSlowRequestSnapshot(List<(long Id, RunningRequestInfo Info)> slowRequests, int waitingAtGateCount, DateTime nowUtc)
+        {
+            RunningRequestInfo? longest = null;
+            var longestSeconds = 0.0;
+            foreach (var (_, info) in slowRequests)
+            {
+                var seconds = (nowUtc - info.StartTimeUtc).TotalSeconds;
+                if (seconds > longestSeconds)
+                {
+                    longestSeconds = seconds;
+                    longest = info;
+                }
+            }
+
+            return new SlowRequestSnapshot(
+                slowRequests.Count,
+                longestSeconds,
+                longest?.Uri,
+                longest?.Phases.Phase,
+                waitingAtGateCount,
+                Math.Max(0, MicrosoftInstance.WaitSecsLeft),
+                MicrosoftInstance.LastPushbackEvent?.Status);
+        }
+
+        // written by LLM, 2026-09-18
+        // Called by the handlers in the flow of the request. An id of 0 is a request without a
+        // URI, which is not tracked.
+        public static void MarkPhase(long id, RequestPhase phase, string? status = null)
+        {
+            TryGetRunningRequest(id)?.Phases.Enter(phase, status, DateTime.UtcNow);
+        }
+
+        // written by LLM, 2026-09-18
+        // Says how the request ended. The slow-request end line names it.
+        public static void MarkOutcome(long id, string? outcomeForLogging)
+        {
+            TryGetRunningRequest(id)?.Phases.SetOutcome(outcomeForLogging);
+        }
+
+        // written by LLM, 2026-09-18
+        private static RunningRequestInfo? TryGetRunningRequest(long id)
+        {
+            if (0 == id)
+            {
+                return null;
+            }
+            lock (RunningRequests)
+            {
+                RunningRequests.TryGetValue(id, out var info);
+                return info;
+            }
+        }
+        // ^=========================================================================================
 
         // written by LLM, 2026-05-30
         // Reads the caller's current log tags on the caller's async flow. The slow-request
@@ -384,10 +640,11 @@ namespace WikiTraccs.Shared.Http
 
             if (removed && null != endedInfo)
             {
-                var elapsed = DateTime.UtcNow - endedInfo.StartTimeUtc;
+                var endTimeUtc = DateTime.UtcNow;
+                var elapsed = endTimeUtc - endedInfo.StartTimeUtc;
                 if (elapsed.TotalSeconds >= SlowRequestSeconds)
                 {
-                    Logger?.LogInformation($"[SLOW REQUEST] Request to '{endedInfo.Uri}' ended after {elapsed.TotalSeconds:F1} seconds");
+                    Logger?.LogInformation($"[SLOW REQUEST] Request to '{endedInfo.Uri}' ended after {elapsed.TotalSeconds:F1} seconds: {endedInfo.Phases.Describe(endTimeUtc, withCurrentPhase: false)}");
                 }
             }
             return removed;
