@@ -777,7 +777,17 @@ namespace WikiTraccs.Shared.Http
             finally
             {
                 // after a completed wait - canceled or not - we need a new tcs
-                tcs = null;
+                // written by LLM, 2026-09-27
+                // Clear it only under the lock and only when it is still the completed tcs of this
+                // wait. A new wait of another thread keeps its tcs, and a caller that its token
+                // stopped leaves the running wait to the other callers.
+                lock (gateLock)
+                {
+                    if (ReferenceEquals(tcs, tcsCopy) && tcsCopy.Task.IsCompleted)
+                    {
+                        tcs = null;
+                    }
+                }
                 Interlocked.Decrement(ref waitCounter);
             }
         }

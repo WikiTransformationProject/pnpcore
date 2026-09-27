@@ -108,8 +108,14 @@ namespace PnP.Core.Services
         // HEU: adding constructor to aid PnPContext mocking
         public PnPContext() : this(null, null, null, null, new PnPContextFactoryOptions(), new PnPGlobalSettingsOptions(), null)
         {
-            
+
         }
+
+        // v============= HEU/LLM: constructor for a mocked context with an authentication provider ==========
+        public PnPContext(IAuthenticationProvider authenticationProvider) : this(null, authenticationProvider, null, null, new PnPContextFactoryOptions(), new PnPGlobalSettingsOptions(), null)
+        {
+        }
+        // ^===================================================================
 
         internal PnPContext(ILogger logger,
                            IAuthenticationProvider authenticationProvider,
