@@ -2208,6 +2208,19 @@ namespace PnP.Core.Model.SharePoint
             }
         }
 
+        // v============= HEU/LLM: Use the public web request API ==========
+        // written by LLM, 2026-10-01
+        // covered by PageRestRequestsMatchLiveSharePointAsync
+        private async Task<ApiCallResponse> ExecutePageWebRequestAsync(ApiCall apiCall, HttpMethod method)
+        {
+            var headers = null == apiCall.Headers ? new Dictionary<string, string>() : new Dictionary<string, string>(apiCall.Headers);
+            headers.TryAdd("Accept", "application/json;odata=nometadata");
+            var request = new ApiRequest(method, ApiRequestType.SPORest, apiCall.Request, apiCall.JsonBody, headers);
+            var response = await PnPContext.Web.ExecuteRequestAsync(request).ConfigureAwait(false);
+            return new ApiCallResponse(apiCall, response.Response, response.StatusCode, Guid.Empty, response.Headers);
+        }
+        // ^===================================================================
+
         // HEU: written by LLM
         // Read CanvasContent1 from the SitePages REST surface — the same endpoint family that hosts
         // SavePage. SP normalises this surface to the JSON-array canvas form on read, regardless of
@@ -2230,7 +2243,10 @@ namespace PnP.Core.Model.SharePoint
             ApiCallResponse response;
             try
             {
-                response = await (PnPContext.Web as Web).RawRequestAsync(apiCall, HttpMethod.Get).ConfigureAwait(false);
+                // v============= HEU/LLM: Use the public web request API ==========
+                // written by LLM, 2026-10-01
+                response = await ExecutePageWebRequestAsync(apiCall, HttpMethod.Get).ConfigureAwait(false);
+                // ^===================================================================
             }
             catch (SharePointRestServiceException ex)
             {
@@ -2340,7 +2356,10 @@ namespace PnP.Core.Model.SharePoint
                 };
                 try
                 {
-                    await (PnPContext.Web as Web).RawRequestAsync(apiCall, HttpMethod.Post).ConfigureAwait(false);
+                    // v============= HEU/LLM: Use the public web request API ==========
+                    // written by LLM, 2026-10-01
+                    await ExecutePageWebRequestAsync(apiCall, HttpMethod.Post).ConfigureAwait(false);
+                    // ^===================================================================
                 }
                 catch (SharePointRestServiceException ex)
                 {
@@ -2912,7 +2931,10 @@ namespace PnP.Core.Model.SharePoint
         {
             var apiCall = new ApiCall($"_api/web/GetClientSideWebParts", ApiType.SPORest);
 
-            var response = await (PnPContext.Web as Web).RawRequestAsync(apiCall, HttpMethod.Post).ConfigureAwait(false);
+            // v============= HEU/LLM: Use the public web request API ==========
+            // written by LLM, 2026-10-01
+            var response = await ExecutePageWebRequestAsync(apiCall, HttpMethod.Post).ConfigureAwait(false);
+            // ^===================================================================
 
             if (!string.IsNullOrEmpty(response.Json))
             {
