@@ -77,8 +77,23 @@ namespace PnP.Core.Services
             {
                 Message = errorMessage
             };
-            return new BatchResult(statusCode, error, "", "SPORest", "", System.Net.Http.HttpMethod.Post, "", requestId);
+            // v============= HEU/LLM: Use the shared fake result constructor ==========
+            return CreateFakeFailedResult(requestId, error);
+            // ^===================================================================
         }
+
+        // v============= HEU/LLM: Keep the measured REST error in a fake batch result ==========
+        // written by LLM, 2026-10-02
+        // covered by ListItemBatchFailuresMatchLiveSharePointAsync
+        public BatchResult CreateFakeFailedResult(Guid requestId, SharePointRestError error)
+        {
+            if (null == error)
+            {
+                throw new ArgumentNullException(nameof(error));
+            }
+            return new BatchResult((HttpStatusCode)error.HttpResponseCode, error, "", "SPORest", "", HttpMethod.Post, "", requestId);
+        }
+        // ^===================================================================
 
         /// <summary>
         /// Event handler triggered when batch execution is done
