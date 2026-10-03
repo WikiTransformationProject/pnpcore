@@ -228,7 +228,10 @@ namespace PnP.Core.Model
                             request.Headers.Add("Accept", "application/json;odata=verbose");
                         }
 
-                        if (apiRequest != null && !apiRequest.StartsWith("https://", StringComparison.InvariantCultureIgnoreCase))
+                        // v============= HEU/LLM: Keep absolute HTTP API URLs ==========
+                        // written by LLM, 2026-10-03
+                        if (null != apiRequest && !IsAbsoluteApiUrl(apiRequest))
+                        // ^===================================================================
                         {
                             apiRequest = $"{PnPContext.Uri.AbsoluteUri.ToString().TrimEnd(new char[] { '/' })}/{apiRequest}";
                         }
@@ -1034,12 +1037,23 @@ namespace PnP.Core.Model
             return "N/A";
         }
 
+        // v============= HEU/LLM: Recognize HTTP and HTTPS API URLs ==========
+        // written by LLM, 2026-10-03
+        // covered by FrameworkHttpContextsAndClonesReadTheSharedRestModelAsync
+        private static bool IsAbsoluteApiUrl(string request)
+            => request.StartsWith("https://", StringComparison.InvariantCultureIgnoreCase)
+                || request.StartsWith("http://", StringComparison.InvariantCultureIgnoreCase);
+        // ^===================================================================
+
         private ApiCall PrefixApiCall(ApiCall apiCall, EntityInfo entityInfo)
         {
             if (!string.IsNullOrEmpty(entityInfo.SharePointType) && (apiCall.Type == ApiType.SPORest || apiCall.Type == ApiType.CSOM))
             {
                 // The request is populated and already has a fully qualified url
-                if (apiCall.Request != null && apiCall.Request.StartsWith("https://", StringComparison.InvariantCultureIgnoreCase))
+                // v============= HEU/LLM: Keep absolute HTTP API URLs ==========
+                // written by LLM, 2026-10-03
+                if (null != apiCall.Request && IsAbsoluteApiUrl(apiCall.Request))
+                // ^===================================================================
                 {
                     return apiCall;
                 }
