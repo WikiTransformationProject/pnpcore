@@ -2,6 +2,12 @@
 
 	<PropertyGroup>
 		<TargetFrameworks>net8.0</TargetFrameworks>
+		<!-- v============= HEU/LLM: Keep package locks and audit all dependencies; keep SourceLink off. ========== -->
+		<RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+		<NuGetAuditMode>all</NuGetAuditMode>
+		<EnableSourceLink>false</EnableSourceLink>
+		<EnableSourceControlManagerQueries>false</EnableSourceControlManagerQueries>
+		<!-- ^=================================================================== -->
 		<LangVersion>10.0</LangVersion>
 		<RootNamespace>PnP.Core</RootNamespace>
 		<AssemblyName>PnP.Core</AssemblyName>
@@ -86,7 +92,9 @@
 			<PrivateAssets>all</PrivateAssets>
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
-		<PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.102" PrivateAssets="All" />
+		<!-- v============= HEU/LLM: Keep the SourceLink package reference off. ========== -->
+		<!-- <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.102" PrivateAssets="All" /> -->
+		<!-- ^=================================================================== -->
 		<PackageReference Include="TimeZoneConverter" Version="6.1.0" />
 	</ItemGroup>
 

@@ -1,5 +1,7 @@
 <Project>
   <PropertyGroup>
-    <EnableSourceControlManagerQueries>true</EnableSourceControlManagerQueries>
+    <!-- v============= HEU/LLM: Keep source control queries off. ========== -->
+    <EnableSourceControlManagerQueries>false</EnableSourceControlManagerQueries>
+    <!-- ^=================================================================== -->
   </PropertyGroup>
 </Project>
