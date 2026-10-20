@@ -49,10 +49,8 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="10.0.102">
-			<PrivateAssets>all</PrivateAssets>
-			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-		</PackageReference>
+		<!-- v============= HEU/LLM: Use the analyzers from the SDK. ========== -->
+		<!-- ^=================================================================== -->
 		<!-- v============= HEU/LLM: Keep the SourceLink package reference off. ========== -->
 		<!-- <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.102" PrivateAssets="All" /> -->
 		<!-- ^=================================================================== -->
