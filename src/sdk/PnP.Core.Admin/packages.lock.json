@@ -235,7 +235,7 @@
       "pnp.core": {
         "type": "Project",
         "dependencies": {
-          "AngleSharp": "[1.8.3, )",
+          "AngleSharp": "[1.8.4, )",
           "Microsoft.ApplicationInsights": "[2.23.0, )",
           "Microsoft.Extensions.Caching.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Caching.Memory": "[10.0.12, )",
