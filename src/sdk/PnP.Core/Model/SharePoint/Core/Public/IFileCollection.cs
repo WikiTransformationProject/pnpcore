@@ -21,6 +21,11 @@ namespace PnP.Core.Model.SharePoint
         /// <returns>The added file object.</returns>
         Task<IFile> AddAsync(string name, Stream content, bool overwrite = false);
 
+        // v============= HEU/LLM: Return selected list item fields with the upload response. ==========
+        /// Uploads a file and returns its item ID and the selected REST field names without another request.
+        Task<IFile> AddAsync(string name, Stream content, bool overwrite, string[] listItemRestFieldNames);
+        // ^===================================================================
+
         /// <summary>
         /// Add a file to the file collection using batching (sync)
         /// </summary>

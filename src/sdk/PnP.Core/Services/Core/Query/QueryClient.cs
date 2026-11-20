@@ -57,6 +57,18 @@ namespace PnP.Core.Services
                 }
             }
 
+            // v============= HEU/LLM: Named column selections use SharePoint REST. ==========
+            // written by LLM, 2026-11-14
+            if (entity.Fields.Any(field => field.ExpandFieldInfo?.HasExpandoFields == true))
+            {
+                if (string.IsNullOrEmpty(entity.SharePointType)
+                    || (!apiOverride.Equals(default(ApiCall)) && apiOverride.Type == ApiType.Graph))
+                {
+                    throw new NotSupportedException("Named column selections require SharePoint REST.");
+                }
+                useGraph = false;
+            }
+            // ^===================================================================
             if (useGraph)
             {
                 return await BuildGetAPICallGraphAsync(model, entity, oDataQuery, apiOverride, useLinqGet, loadPages).ConfigureAwait(false);
@@ -201,6 +213,13 @@ namespace PnP.Core.Services
 
             foreach (var expandableField in expandFields.Fields.OrderBy(p => p.Expandable))
             {
+                // v============= HEU/LLM: A named column has no navigation property to expand. ==========
+                // written by LLM, 2026-11-14
+                if (expandableField.IsExpandoField)
+                {
+                    continue;
+                }
+                // ^===================================================================
                 var expandableFieldInfo = collectionEntityInfo.Fields.First(p => p.Name == expandableField.Name);
 
                 if (expandableFieldInfo.SharePointExpandable)
@@ -237,6 +256,16 @@ namespace PnP.Core.Services
             {
                 foreach (var expandableField in expandFields.Fields.OrderBy(p => p.Expandable))
                 {
+                    // v============= HEU/LLM: Select a named expando column in this request. ==========
+                    // written by LLM, 2026-11-14
+                    if (expandableField.IsExpandoField)
+                    {
+                        var restName = expandableField.Name.StartsWith("_", StringComparison.Ordinal)
+                            ? "OData_" + expandableField.Name : expandableField.Name;
+                        sb.Append($"{JsonMappingHelper.GetRestField(field)}{path}/{restName},");
+                        continue;
+                    }
+                    // ^===================================================================
                     var expandableFieldInfo = collectionEntityInfo.Fields.First(p => p.Name == expandableField.Name);
                     if (!expandableFieldInfo.SharePointExpandable)
                     {

@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -30,6 +31,9 @@ namespace WikiTraccs.Shared.Http
         WaitingForRetry
     }
 
+    // written by LLM, 2026-11-18
+    internal sealed record RequestRetrySummary(int Attempts, string LastStatus, double WaitSeconds, string Outcome);
+
     // written by LLM, 2026-09-18
     // The time of one request in each phase. The marks come from the flow of the request; the
     // reads come from the monitor timer, thus the lock.
@@ -42,6 +46,8 @@ namespace WikiTraccs.Shared.Http
         private double onTheWireSeconds;
         private double retryWaitSeconds;
         private int retryCount;
+        // written by LLM, 2026-11-18
+        private int attemptCount;
         private string? lastStatus;
         private string? outcome;
 
@@ -78,8 +84,35 @@ namespace WikiTraccs.Shared.Http
                     retryCount++;
                     lastStatus = status;
                 }
+                // written by LLM, 2026-11-18
+                if (next == RequestPhase.OnTheWire)
+                {
+                    attemptCount++;
+                }
                 phase = next;
                 phaseStartUtc = nowUtc;
+            }
+        }
+
+        // written by LLM, 2026-11-18
+        // Count dispatched attempts. A cancellation during a retry wait can leave one retry unsent.
+        internal RequestRetrySummary? GetRetrySummary(DateTime nowUtc)
+        {
+            lock (phaseLock)
+            {
+                if (retryCount == 0)
+                {
+                    return null;
+                }
+
+                var wait = gateWaitSeconds + retryWaitSeconds;
+                if (phase != RequestPhase.OnTheWire)
+                {
+                    wait += Math.Max(0, (nowUtc - phaseStartUtc).TotalSeconds);
+                }
+                var status = Enum.TryParse<HttpStatusCode>(lastStatus, out var httpStatus)
+                    ? $"HTTP {(int)httpStatus}" : lastStatus ?? "unknown";
+                return new(attemptCount, status, wait, outcome ?? "request failed");
             }
         }
 
@@ -616,7 +649,7 @@ namespace WikiTraccs.Shared.Http
         }
         // ^===================================================================
 
-        public static bool EndRequest(long id)
+        public static bool EndRequest(long id, string? method = null)
         {
             // v============= HEU/LLM: Log a slow request at its end, from the request's own flow. ==========
             // written by LLM, 2026-09-06
@@ -644,7 +677,20 @@ namespace WikiTraccs.Shared.Http
                 var elapsed = endTimeUtc - endedInfo.StartTimeUtc;
                 if (elapsed.TotalSeconds >= SlowRequestSeconds)
                 {
-                    Logger?.LogInformation($"[SLOW REQUEST] Request to '{endedInfo.Uri}' ended after {elapsed.TotalSeconds:F1} seconds: {endedInfo.Phases.Describe(endTimeUtc, withCurrentPhase: false)}");
+                    // written by LLM, 2026-11-18
+                    // A long retry gets one completion line with the measured wait and final result.
+                    if (endedInfo.Phases.GetRetrySummary(endTimeUtc) is { } retry)
+                    {
+                        var operation = Uri.TryCreate(endedInfo.Uri, UriKind.Absolute, out var uri)
+                            ? uri.Host + uri.AbsolutePath : "unknown route";
+                        Logger?.LogInformation(
+                            "HTTP retry summary for {Method} {Operation}. Retry status {Status}. Attempts {Attempts}. Wait {WaitSeconds:F1} s of {ElapsedSeconds:F1} s. Outcome {Outcome}.",
+                            method ?? "HTTP request", operation, retry.LastStatus, retry.Attempts, retry.WaitSeconds, elapsed.TotalSeconds, retry.Outcome);
+                    }
+                    else
+                    {
+                        Logger?.LogInformation($"[SLOW REQUEST] Request to '{endedInfo.Uri}' ended after {elapsed.TotalSeconds:F1} seconds: {endedInfo.Phases.Describe(endTimeUtc, withCurrentPhase: false)}");
+                    }
                 }
             }
             return removed;

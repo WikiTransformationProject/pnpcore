@@ -503,6 +503,24 @@ namespace PnP.Core.Model
                     }
                     else if (fieldExpressionBody is MethodCallExpression)
                     {
+                        // v============= HEU/LLM: Include named columns in an expanded list item. ==========
+                        // written by LLM, 2026-11-14
+                        if (fieldExpressionBody is MethodCallExpression columnCall
+                            && columnCall.Method.Name == "get_Item" && columnCall.Arguments.Count == 1
+                            && columnCall.Object is ParameterExpression
+                            && typeof(IExpandoDataModel).IsAssignableFrom(resultType))
+                        {
+                            var columnName = columnCall.Arguments[0].GetConstantValue() as string;
+                            if (string.IsNullOrWhiteSpace(columnName)
+                                || columnName.Any(character => !char.IsLetterOrDigit(character) && character != '_'))
+                            {
+                                throw new ArgumentException("The column selector must use a field internal name.");
+                            }
+                            entityFieldExpandInfo.Fields.Add(new EntityFieldExpandInfo
+                                { Name = columnName, IsExpandoField = true });
+                            continue;
+                        }
+                        // ^===================================================================
                         if ((fieldExpressionBody as MethodCallExpression).Method.Name == nameof(DataModelLoadExtensions.QueryProperties))
                         {
                             var fld = ((fieldExpressionBody as MethodCallExpression).Arguments[0] as MemberExpression).Member.Name;

@@ -2,6 +2,9 @@ using PnP.Core.QueryModel;
 using PnP.Core.Services;
 using System;
 using System.IO;
+// v============= HEU/LLM: Build an upload field projection. ==========
+using System.Linq;
+// ^===================================================================
 using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
@@ -21,7 +24,13 @@ namespace PnP.Core.Model.SharePoint
         #endregion
 
         #region Add
-        public async Task<IFile> AddAsync(string name, Stream content, bool overwrite = false)
+        // v============= HEU/LLM: Keep uploads without a field projection unchanged. ==========
+        // written by LLM, 2026-11-14
+        public Task<IFile> AddAsync(string name, Stream content, bool overwrite = false)
+            => AddAsync(name, content, overwrite, null);
+
+        public async Task<IFile> AddAsync(string name, Stream content, bool overwrite, string[] listItemRestFieldNames)
+        // ^===================================================================
         {
             if (string.IsNullOrEmpty(name))
             {
@@ -33,11 +42,15 @@ namespace PnP.Core.Model.SharePoint
 
             if (content.Length <= maxFileSizeForRegularUpload)
             {
-                newFile = await FileUpload(newFile, content, overwrite).ConfigureAwait(false);
+                // v============= HEU/LLM: Include selected item fields in the upload response. ==========
+                newFile = await FileUpload(newFile, content, overwrite, listItemRestFieldNames).ConfigureAwait(false);
+                // ^===================================================================
             }
             else
             {
-                newFile = await ChunkedFileUpload(newFile, content, overwrite).ConfigureAwait(false);
+                // v============= HEU/LLM: Include selected item fields after the final chunk. ==========
+                newFile = await ChunkedFileUpload(newFile, content, overwrite, listItemRestFieldNames).ConfigureAwait(false);
+                // ^===================================================================
             }
 
             return newFile;
@@ -75,10 +88,16 @@ namespace PnP.Core.Model.SharePoint
         #endregion
 
         #region File upload
-        private static async Task<File> FileUpload(File newFile, Stream content, bool overwrite)
+        // v============= HEU/LLM: Pass the requested fields to the upload. ==========
+        private static async Task<File> FileUpload(File newFile, Stream content, bool overwrite, string[] listItemRestFieldNames)
+        // ^===================================================================
         {
             var encodedServerFileName = WebUtility.UrlEncode(newFile.Name.Replace("'", "''").Replace("%20", " ")).Replace("+", "%20");
             string fileCreateRequest = $"_api/web/getFolderById('{{Parent.Id}}')/files/addusingpath(decodedUrl='{encodedServerFileName}',overwrite={overwrite.ToString().ToLowerInvariant()})";
+            // v============= HEU/LLM: Select list item fields in the same POST response. ==========
+            // written by LLM, 2026-11-14
+            fileCreateRequest = AddListItemProjection(fileCreateRequest, listItemRestFieldNames);
+            // ^===================================================================
             var api = new ApiCall(fileCreateRequest, ApiType.SPORest)
             {
                 Interactive = true,
@@ -88,7 +107,9 @@ namespace PnP.Core.Model.SharePoint
             return newFile;
         }
 
-        private static async Task<File> ChunkedFileUpload(File newFile, Stream content, bool overwrite)
+        // v============= HEU/LLM: Pass requested fields to the final chunk. ==========
+        private static async Task<File> ChunkedFileUpload(File newFile, Stream content, bool overwrite, string[] listItemRestFieldNames)
+        // ^===================================================================
         {
             // 10 MB chunks
             int chunkSizeBytes = 10 * 1024 * 1024;
@@ -135,6 +156,10 @@ namespace PnP.Core.Model.SharePoint
                 {
                     // Finalize upload
                     var endpointUrl = $"_api/web/getFileById('{{Id}}')/finishupload(uploadId=guid'{uploadId}',fileOffset={offset})";
+                    // v============= HEU/LLM: Return item fields with the final upload response. ==========
+                    // written by LLM, 2026-11-14
+                    endpointUrl = AddListItemProjection(endpointUrl, listItemRestFieldNames);
+                    // ^===================================================================
                     var api = new ApiCall(endpointUrl, ApiType.SPORest)
                     {
                         Interactive = true,
@@ -160,6 +185,25 @@ namespace PnP.Core.Model.SharePoint
 
             return newFile;
         }
+
+        // v============= HEU/LLM: Add a list item projection without another read. ==========
+        // written by LLM, 2026-11-14
+        private static string AddListItemProjection(string request, string[] fieldNames)
+        {
+            if (fieldNames == null || fieldNames.Length == 0)
+            {
+                return request;
+            }
+            if (fieldNames.Any(name => string.IsNullOrWhiteSpace(name)
+                || name.Any(character => !char.IsLetterOrDigit(character) && character != '_')))
+            {
+                throw new ArgumentException("The upload projection must use REST field names.", nameof(fieldNames));
+            }
+            var selected = new[] { "Id" }.Concat(fieldNames).Distinct(StringComparer.Ordinal)
+                .Select(name => "ListItemAllFields/" + name);
+            return request + "?$expand=ListItemAllFields&$select=*," + string.Join(",", selected);
+        }
+        // ^===================================================================
 
         private static byte[] ToByteArray(Stream source)
         {

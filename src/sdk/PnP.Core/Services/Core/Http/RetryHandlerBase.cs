@@ -82,7 +82,7 @@ namespace PnP.Core.Services
                         {
                             if (GlobalSettings != null && GlobalSettings.Logger != null)
                             {
-                                GlobalSettings.Logger.LogInformation($"[THROTTLED] Waiting {AwaitableGate.MicrosoftInstance.WaitSecsLeft} seconds before continuing (AwaitableGate)");
+                                GlobalSettings.Logger.LogDebug("[HTTP RETRY DETAIL] Waiting {Seconds} seconds at the SharePoint gate", AwaitableGate.MicrosoftInstance.WaitSecsLeft);
                             }
                         }
                         await AwaitableGate.MicrosoftInstance.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -124,13 +124,15 @@ namespace PnP.Core.Services
     #endif
                             }
 
+                            // written by LLM, 2026-11-18
+                            AwaitableGate.MarkOutcome(id, $"retry limit reached (HTTP {(int)response.StatusCode})");
                             throw new ServiceException(ErrorType.TooManyRetries, (int)response.StatusCode,
                                 string.Format(PnPCoreResources.Exception_ServiceException_MaxRetries, retryCount));
                         }
 
                         if (GlobalSettings != null && GlobalSettings.Logger != null)
                         {
-                            GlobalSettings.Logger.LogInformation($"{(response.StatusCode == HttpStatusCode.TooManyRequests ? "[THROTTLED] " : "")}Retrying request {request.RequestUri} due to status code {response.StatusCode}");
+                            GlobalSettings.Logger.LogDebug("[HTTP RETRY DETAIL] Retrying {Url} after HTTP {Status}", request.RequestUri, (int)response.StatusCode);
                         }
                     }
                     catch (Exception ex)
@@ -155,11 +157,9 @@ namespace PnP.Core.Services
                             throw;
                         }
 
-                        string errorMessage = innermostEx.Message;
-
                         if (GlobalSettings != null && GlobalSettings.Logger != null)
                         {
-                            GlobalSettings.Logger.LogInformation($"Retrying request {request.RequestUri} due to exception {innermostEx.GetType()}: {innermostEx.Message}");
+                            GlobalSettings.Logger.LogDebug("[HTTP RETRY DETAIL] Retrying {Url} after {ErrorType}", request.RequestUri, innermostEx.GetType().Name);
                         }
                     }
 
@@ -192,7 +192,7 @@ namespace PnP.Core.Services
 
                     if (GlobalSettings != null && GlobalSettings.Logger != null && delayTimeSpan.TotalSeconds > 0)
                     {
-                        GlobalSettings.Logger.LogInformation($"[THROTTLED] Waiting {delayTimeSpan.TotalSeconds} seconds before retrying");
+                        GlobalSettings.Logger.LogDebug("[HTTP RETRY DETAIL] Waiting {Seconds} seconds before retrying", delayTimeSpan.TotalSeconds);
                     }
                     // Delay time
                     // v============= HEU/LLM: Record structured PnP Core pushback facts. ==========
@@ -208,9 +208,16 @@ namespace PnP.Core.Services
                     await AwaitableGate.MicrosoftInstance.WaitAsync(cancellationToken).ConfigureAwait(false);
     //                await delay.ConfigureAwait(false);
                 }
-            } finally
+            }
+            // written by LLM, 2026-11-18
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                AwaitableGate.EndRequest(id);
+                AwaitableGate.MarkOutcome(id, "cancelled");
+                throw;
+            }
+            finally
+            {
+                AwaitableGate.EndRequest(id, request.Method.Method);
             }
         }
 
